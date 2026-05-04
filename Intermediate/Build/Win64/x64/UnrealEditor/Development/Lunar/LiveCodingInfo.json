@@ -1,0 +1,9 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.Lunar.cpp.obj": [
+			"PerModuleInline.gen.cpp.obj",
+			"Lunar.cpp.obj"
+		]
+	}
+}

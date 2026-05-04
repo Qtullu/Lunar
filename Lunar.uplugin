@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Lunar",
+	"Description": "Lunar is a lightweight Unreal Engine plugin with reusable default content, utilities, templates, and helper tools designed to speed up project setup and everyday development.",
+	"Category": "Other",
+	"CreatedBy": "Edgar Frolenkov",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "Lunar",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
