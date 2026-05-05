@@ -3,7 +3,7 @@
     "Data": {
         "Source": "x:\\projects\\lunar_proj\\plugins\\lunar\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\lunar\\module.lunar.cpp",
         "ProvidedModule": "",
-        "PCH": "x:\\projects\\lunar_proj\\intermediate\\build\\win64\\x64\\lunar_projeditor\\development\\unrealed\\sharedpch.unrealed.cpp20.h.pch",
+        "PCH": "x:\\projects\\lunar_proj\\intermediate\\build\\win64\\x64\\lunar_projeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
         "Includes": [
             "x:\\projects\\lunar_proj\\plugins\\lunar\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\lunar\\definitions.lunar.h",
             "x:\\projects\\lunar_proj\\plugins\\lunar\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\lunar\\permoduleinline.gen.cpp",
