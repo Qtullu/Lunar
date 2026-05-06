@@ -87,7 +87,7 @@
 /DUE_BUILD_DEVELOPMENT=1
 /DORIGINAL_FILE_NAME="UnrealEditor-Lunar.dll"
 /DBUILD_ICON_FILE_NAME="\"..\\Build\\Windows\\Resources\\Default.ico\""
-/DPROJECT_COPYRIGHT_STRING="Fill out your copyright notice in the Description page of Project Settings."
+/DPROJECT_COPYRIGHT_STRING="Copyright 2026 Edgar Frolenkov All rights reserved."
 /DPROJECT_PRODUCT_IDENTIFIER=Lunar_proj
 /fo "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Default.rc2.res"
 "../Build/Windows/Resources/Default.rc2"
