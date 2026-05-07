@@ -19,10 +19,10 @@
 			"LunarFLUI.gen.cpp.obj",
 			"LunarPerformanceSubsystem.gen.cpp.obj",
 			"LunarSettings.gen.cpp.obj",
-			"LunarTypesGame.gen.cpp.obj",
-			"LunarTypesPerformance.gen.cpp.obj"
+			"LunarTypesGame.gen.cpp.obj"
 		],
 		"Module.Lunar.2.cpp.obj": [
+			"LunarTypesPerformance.gen.cpp.obj",
 			"PerModuleInline.gen.cpp.obj"
 		],
 		"Module.Lunar.3.cpp.obj": [

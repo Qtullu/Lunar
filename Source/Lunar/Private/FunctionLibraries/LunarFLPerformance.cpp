@@ -1575,22 +1575,28 @@ FLunarPerformanceSettings ULunarFLPerformance::GetPerformanceSettings()
 
 // Paint
 
-void ULunarFLPerformance::PaintFPSGraph(
-	UWidget* WidgetSelf,
+void ULunarFLPerformance::PaintFloatHistoryGraph(
+	UWidget* PaintOwnerWidget,
+	UWidget* GraphWidget,
 	FPaintContext& Context,
-	const TArray<float>& FPSValues,
+	const FLunarPerformanceFloatHistory& History,
 	float UpdateInterval,
 	float SecondsSinceLastSample,
+	FString GraphLabel,
+	FString ValueSuffix,
 	int32 MaxVisibleSamples,
 	float Padding,
 	float LeftLabelWidth,
 	int32 YTickCount,
+	bool bUseZeroBaseline,
+	bool bDrawLabel,
+	bool bDrawYTicks,
 	bool bDrawTopBorder,
 	bool bDrawBottomBorder,
 	bool bDrawLeftBorder,
 	bool bDrawRightBorder,
 	bool bDrawTargetLine,
-	float TargetFPS,
+	float TargetValue,
 	FLinearColor GraphTint,
 	FLinearColor TargetLineTint,
 	FLinearColor BorderTint,
@@ -1606,19 +1612,29 @@ void ULunarFLPerformance::PaintFPSGraph(
 	float SplineTangentStrength
 )
 {
-	if (!WidgetSelf)
+	if (!PaintOwnerWidget || !GraphWidget)
 	{
 		return;
 	}
 
-	const FVector2D LocalSize = WidgetSelf->GetCachedGeometry().GetLocalSize();
+	const FGeometry& PaintOwnerGeometry = PaintOwnerWidget->GetCachedGeometry();
+	const FGeometry& GraphGeometry = GraphWidget->GetCachedGeometry();
 
-	if (LocalSize.X <= 1.0f || LocalSize.Y <= 1.0f)
+	const FVector2D PaintOwnerLocalSize = PaintOwnerGeometry.GetLocalSize();
+	const FVector2D GraphLocalSize = GraphGeometry.GetLocalSize();
+
+	if (PaintOwnerLocalSize.X <= 1.0f || PaintOwnerLocalSize.Y <= 1.0f)
 	{
 		return;
 	}
 
-	const int32 SourceCount = FPSValues.Num();
+	if (GraphLocalSize.X <= 1.0f || GraphLocalSize.Y <= 1.0f)
+	{
+		return;
+	}
+
+	const TArray<float>& Values = History.Values;
+	const int32 SourceCount = Values.Num();
 
 	if (SourceCount <= 0)
 	{
@@ -1635,10 +1651,13 @@ void ULunarFLPerformance::PaintFPSGraph(
 	TickLength = FMath::Max(TickLength, 0.0f);
 	SplineTangentStrength = FMath::Max(SplineTangentStrength, 0.0f);
 
-	const float GraphLeft = Padding + LeftLabelWidth;
-	const float GraphTop = Padding;
-	const float GraphRight = LocalSize.X - Padding;
-	const float GraphBottom = LocalSize.Y - Padding;
+	const FVector2D GraphAbsolutePosition = GraphGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+	const FVector2D GraphPositionInPaintOwner = PaintOwnerGeometry.AbsoluteToLocal(GraphAbsolutePosition);
+
+	const float GraphLeft = GraphPositionInPaintOwner.X + Padding + LeftLabelWidth;
+	const float GraphTop = GraphPositionInPaintOwner.Y + Padding;
+	const float GraphRight = GraphPositionInPaintOwner.X + GraphLocalSize.X - Padding;
+	const float GraphBottom = GraphPositionInPaintOwner.Y + GraphLocalSize.Y - Padding;
 
 	const float GraphWidth = GraphRight - GraphLeft;
 	const float GraphHeight = GraphBottom - GraphTop;
@@ -1651,30 +1670,63 @@ void ULunarFLPerformance::PaintFPSGraph(
 	const int32 VisibleCount = FMath::Min(SourceCount, MaxVisibleSamples);
 	const int32 FirstVisibleIndex = SourceCount - VisibleCount;
 
-	float MaxVisibleFPS = 0.0f;
+	float MinVisibleValue = TNumericLimits<float>::Max();
+	float MaxVisibleValue = TNumericLimits<float>::Lowest();
 
 	for (int32 Index = FirstVisibleIndex; Index < SourceCount; ++Index)
 	{
-		MaxVisibleFPS = FMath::Max(MaxVisibleFPS, FPSValues[Index]);
+		const float Value = Values[Index];
+
+		if (!FMath::IsFinite(Value))
+		{
+			continue;
+		}
+
+		MinVisibleValue = FMath::Min(MinVisibleValue, Value);
+		MaxVisibleValue = FMath::Max(MaxVisibleValue, Value);
 	}
 
-	if (MaxVisibleFPS <= 0.0f)
+	if (!FMath::IsFinite(MinVisibleValue) || !FMath::IsFinite(MaxVisibleValue))
 	{
-		MaxVisibleFPS = 1.0f;
+		return;
 	}
+
+	if (bUseZeroBaseline)
+	{
+		MinVisibleValue = 0.0f;
+	}
+
+	if (FMath::IsNearlyEqual(MinVisibleValue, MaxVisibleValue))
+	{
+		MaxVisibleValue = MinVisibleValue + 1.0f;
+	}
+
+	const float ValueRange = FMath::Max(MaxVisibleValue - MinVisibleValue, 1.0f);
 
 	const float ScrollAlpha = FMath::Clamp(SecondsSinceLastSample / UpdateInterval, 0.0f, 1.0f);
 	const float SampleSpacing = GraphWidth / static_cast<float>(MaxVisibleSamples - 1);
 
+	auto FormatValue = [&ValueSuffix](const float Value) -> FString
+		{
+			const float RoundedValue = FMath::RoundToFloat(Value);
+
+			if (FMath::Abs(Value) >= 100.0f || FMath::IsNearlyEqual(Value, RoundedValue, 0.05f))
+			{
+				return FString::Printf(TEXT("%.0f%s"), Value, *ValueSuffix);
+			}
+
+			return FString::Printf(TEXT("%.1f%s"), Value, *ValueSuffix);
+		};
+
 	auto MakeGraphPoint = [&](
 		const int32 LocalIndex,
-		const float FPSValue
+		const float Value
 		) -> FVector2D
 		{
 			const float SamplesFromRight = static_cast<float>((VisibleCount - 1) - LocalIndex) + ScrollAlpha;
 			const float X = GraphRight - SamplesFromRight * SampleSpacing;
 
-			const float NormalizedY = FMath::Clamp(FPSValue / MaxVisibleFPS, 0.0f, 1.0f);
+			const float NormalizedY = FMath::Clamp((Value - MinVisibleValue) / ValueRange, 0.0f, 1.0f);
 			const float Y = GraphBottom - NormalizedY * GraphHeight;
 
 			return FVector2D(X, Y);
@@ -1729,28 +1781,21 @@ void ULunarFLPerformance::PaintFPSGraph(
 		);
 	}
 
-	// Y ticks and labels.
-	for (int32 TickIndex = 0; TickIndex <= YTickCount; ++TickIndex)
+	// Graph label.
+	if (bDrawLabel && !GraphLabel.IsEmpty())
 	{
-		const float Alpha = static_cast<float>(TickIndex) / static_cast<float>(YTickCount);
-		const float FPSValue = MaxVisibleFPS * Alpha;
-		const float Y = GraphBottom - Alpha * GraphHeight;
+		const float LastValue = Values[SourceCount - 1];
 
-		UWidgetBlueprintLibrary::DrawLine(
-			Context,
-			FVector2D(GraphLeft - TickLength, Y),
-			FVector2D(GraphLeft, Y),
-			TickTint,
-			true,
-			BorderThickness
+		const FString LabelString = FString::Printf(
+			TEXT("%s  %s"),
+			*GraphLabel,
+			*FormatValue(LastValue)
 		);
-
-		const FString LabelString = FString::Printf(TEXT("%.0f"), FPSValue);
 
 		UWidgetBlueprintLibrary::DrawTextFormatted(
 			Context,
 			FText::FromString(LabelString),
-			FVector2D(Padding, Y - static_cast<float>(LabelFontSize) * 0.5f),
+			FVector2D(GraphLeft + 4.0f, GraphTop + 2.0f),
 			LabelFont,
 			LabelFontSize,
 			LabelFontTypeface,
@@ -1758,10 +1803,40 @@ void ULunarFLPerformance::PaintFPSGraph(
 		);
 	}
 
-	// Target FPS line.
-	if (bDrawTargetLine && TargetFPS > 0.0f)
+	// Y ticks and labels.
+	if (bDrawYTicks)
 	{
-		const float TargetNormalized = FMath::Clamp(TargetFPS / MaxVisibleFPS, 0.0f, 1.0f);
+		for (int32 TickIndex = 0; TickIndex <= YTickCount; ++TickIndex)
+		{
+			const float Alpha = static_cast<float>(TickIndex) / static_cast<float>(YTickCount);
+			const float Value = MinVisibleValue + ValueRange * Alpha;
+			const float Y = GraphBottom - Alpha * GraphHeight;
+
+			UWidgetBlueprintLibrary::DrawLine(
+				Context,
+				FVector2D(GraphLeft - TickLength, Y),
+				FVector2D(GraphLeft, Y),
+				TickTint,
+				true,
+				BorderThickness
+			);
+
+			UWidgetBlueprintLibrary::DrawTextFormatted(
+				Context,
+				FText::FromString(FormatValue(Value)),
+				FVector2D(GraphPositionInPaintOwner.X + Padding, Y - static_cast<float>(LabelFontSize) * 0.5f),
+				LabelFont,
+				LabelFontSize,
+				LabelFontTypeface,
+				TextTint
+			);
+		}
+	}
+
+	// Target line.
+	if (bDrawTargetLine && FMath::IsFinite(TargetValue))
+	{
+		const float TargetNormalized = FMath::Clamp((TargetValue - MinVisibleValue) / ValueRange, 0.0f, 1.0f);
 		const float TargetY = GraphBottom - TargetNormalized * GraphHeight;
 
 		UWidgetBlueprintLibrary::DrawLine(
@@ -1779,14 +1854,19 @@ void ULunarFLPerformance::PaintFPSGraph(
 		return;
 	}
 
-	// FPS graph.
+	// Main graph.
 	for (int32 LocalIndex = 0; LocalIndex < VisibleCount - 1; ++LocalIndex)
 	{
 		const int32 CurrentSourceIndex = FirstVisibleIndex + LocalIndex;
 		const int32 NextSourceIndex = CurrentSourceIndex + 1;
 
-		const float CurrentFPS = FPSValues[CurrentSourceIndex];
-		const float NextFPS = FPSValues[NextSourceIndex];
+		const float CurrentValue = Values[CurrentSourceIndex];
+		const float NextValue = Values[NextSourceIndex];
+
+		if (!FMath::IsFinite(CurrentValue) || !FMath::IsFinite(NextValue))
+		{
+			continue;
+		}
 
 		const int32 PreviousLocalIndex = FMath::Max(LocalIndex - 1, 0);
 		const int32 AfterLocalIndex = FMath::Min(LocalIndex + 2, VisibleCount - 1);
@@ -1794,13 +1874,18 @@ void ULunarFLPerformance::PaintFPSGraph(
 		const int32 PreviousSourceIndex = FirstVisibleIndex + PreviousLocalIndex;
 		const int32 AfterSourceIndex = FirstVisibleIndex + AfterLocalIndex;
 
-		const float PreviousFPS = FPSValues[PreviousSourceIndex];
-		const float AfterFPS = FPSValues[AfterSourceIndex];
+		const float PreviousValue = Values[PreviousSourceIndex];
+		const float AfterValue = Values[AfterSourceIndex];
 
-		const FVector2D PreviousPoint = MakeGraphPoint(PreviousLocalIndex, PreviousFPS);
-		const FVector2D CurrentPoint = MakeGraphPoint(LocalIndex, CurrentFPS);
-		const FVector2D NextPoint = MakeGraphPoint(LocalIndex + 1, NextFPS);
-		const FVector2D AfterPoint = MakeGraphPoint(AfterLocalIndex, AfterFPS);
+		if (!FMath::IsFinite(PreviousValue) || !FMath::IsFinite(AfterValue))
+		{
+			continue;
+		}
+
+		const FVector2D PreviousPoint = MakeGraphPoint(PreviousLocalIndex, PreviousValue);
+		const FVector2D CurrentPoint = MakeGraphPoint(LocalIndex, CurrentValue);
+		const FVector2D NextPoint = MakeGraphPoint(LocalIndex + 1, NextValue);
+		const FVector2D AfterPoint = MakeGraphPoint(AfterLocalIndex, AfterValue);
 
 		const FVector2D StartTangent = (NextPoint - PreviousPoint) * SplineTangentStrength;
 		const FVector2D EndTangent = (AfterPoint - CurrentPoint) * SplineTangentStrength;

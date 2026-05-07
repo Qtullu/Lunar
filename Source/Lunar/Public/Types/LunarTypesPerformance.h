@@ -27,28 +27,29 @@ enum class ELunarMemoryUnit : uint8
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceHistory
+struct LUNAR_API FLunarPerformanceFloatHistory
 {
 	GENERATED_BODY()
 
+public:
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Performance|History")
-	TArray<float> FPSValues;
+	TArray<float> Values;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Performance|History")
-	float AverageFPS = 0.0f;
+	float Average = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Performance|History")
-	float MinFPS = 0.0f;
+	float Min = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Performance|History")
-	float MaxFPS = 0.0f;
+	float Max = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Performance|History")
 	float HistoryDurationSeconds = 60.0f;
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceFrameStats
+struct LUNAR_API FLunarPerformanceFrameStats
 {
 	GENERATED_BODY()
 
@@ -63,7 +64,7 @@ struct FLunarPerformanceFrameStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceMemoryStats
+struct LUNAR_API FLunarPerformanceMemoryStats
 {
 	GENERATED_BODY()
 
@@ -87,7 +88,7 @@ struct FLunarPerformanceMemoryStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceProcessGPUStats
+struct LUNAR_API FLunarPerformanceProcessGPUStats
 {
 	GENERATED_BODY()
 
@@ -117,7 +118,7 @@ struct FLunarPerformanceProcessGPUStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceGPUStats
+struct LUNAR_API FLunarPerformanceGPUStats
 {
 	GENERATED_BODY()
 
@@ -156,7 +157,7 @@ struct FLunarPerformanceGPUStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceCPUStats
+struct LUNAR_API FLunarPerformanceCPUStats
 {
 	GENERATED_BODY()
 
@@ -184,7 +185,7 @@ struct FLunarPerformanceCPUStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceDiskStats
+struct LUNAR_API FLunarPerformanceDiskStats
 {
 	GENERATED_BODY()
 
@@ -205,7 +206,7 @@ struct FLunarPerformanceDiskStats
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceSnapshot
+struct LUNAR_API FLunarPerformanceSnapshot
 {
 	GENERATED_BODY()
 
@@ -235,7 +236,7 @@ struct FLunarPerformanceSnapshot
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceGeneralSettings
+struct LUNAR_API FLunarPerformanceGeneralSettings
 {
 	GENERATED_BODY()
 
@@ -247,7 +248,7 @@ struct FLunarPerformanceGeneralSettings
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceCollectionSettings
+struct LUNAR_API FLunarPerformanceCollectionSettings
 {
 	GENERATED_BODY()
 
@@ -259,7 +260,7 @@ struct FLunarPerformanceCollectionSettings
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceEnvironmentSettings
+struct LUNAR_API FLunarPerformanceEnvironmentSettings
 {
 	GENERATED_BODY()
 
@@ -286,7 +287,7 @@ struct FLunarPerformanceEnvironmentSettings
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceDisplaySettings
+struct LUNAR_API FLunarPerformanceDisplaySettings
 {
 	GENERATED_BODY()
 
@@ -307,7 +308,7 @@ struct FLunarPerformanceDisplaySettings
 };
 
 USTRUCT(BlueprintType)
-struct FLunarPerformanceSettings
+struct LUNAR_API FLunarPerformanceSettings
 {
 	GENERATED_BODY()
 

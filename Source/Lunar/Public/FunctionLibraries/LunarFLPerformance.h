@@ -276,26 +276,30 @@ public:
 	UFUNCTION(
 		BlueprintCallable,
 		Category = "Lunar|Performance|Paint",
-		meta = (
-			AdvancedDisplay = "MaxVisibleSamples,Padding,LeftLabelWidth,YTickCount,bDrawTopBorder,bDrawBottomBorder,bDrawLeftBorder,bDrawRightBorder,bDrawTargetLine,TargetFPS,GraphTint,TargetLineTint,BorderTint,TickTint,TextTint,LineThickness,TargetLineThickness,BorderThickness,TickLength,LabelFont,LabelFontSize,LabelFontTypeface,SplineTangentStrength"
-			)
+		meta = (AdvancedDisplay = "MaxVisibleSamples,Padding,LeftLabelWidth,YTickCount,bUseZeroBaseline,bDrawLabel,bDrawYTicks,bDrawTopBorder,bDrawBottomBorder,bDrawLeftBorder,bDrawRightBorder,bDrawTargetLine,TargetValue,GraphTint,TargetLineTint,BorderTint,TickTint,TextTint,LineThickness,TargetLineThickness,BorderThickness,TickLength,LabelFont,LabelFontSize,LabelFontTypeface,SplineTangentStrength")
 	)
-	static void PaintFPSGraph(
-		UWidget* WidgetSelf,
+	static void PaintFloatHistoryGraph(
+		UWidget* PaintOwnerWidget,
+		UWidget* GraphWidget,
 		UPARAM(ref) FPaintContext& Context,
-		const TArray<float>& FPSValues,
+		const FLunarPerformanceFloatHistory& History,
 		float UpdateInterval,
 		float SecondsSinceLastSample,
+		FString GraphLabel,
+		FString ValueSuffix,
 		int32 MaxVisibleSamples = 120,
 		float Padding = 8.0f,
 		float LeftLabelWidth = 36.0f,
 		int32 YTickCount = 4,
+		bool bUseZeroBaseline = true,
+		bool bDrawLabel = true,
+		bool bDrawYTicks = true,
 		bool bDrawTopBorder = true,
 		bool bDrawBottomBorder = true,
 		bool bDrawLeftBorder = true,
 		bool bDrawRightBorder = true,
-		bool bDrawTargetLine = true,
-		float TargetFPS = 60.0f,
+		bool bDrawTargetLine = false,
+		float TargetValue = 0.0f,
 		FLinearColor GraphTint = FLinearColor(1.0f, 0.476f, 0.319f, 1.0f),
 		FLinearColor TargetLineTint = FLinearColor(1.0f, 1.0f, 1.0f, 0.35f),
 		FLinearColor BorderTint = FLinearColor(1.0f, 1.0f, 1.0f, 0.25f),

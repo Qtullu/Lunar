@@ -67,10 +67,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance")
 	bool HasCurrentSnapshot() const;
 
-	// FPS history.
-
-	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
-	FLunarPerformanceHistory GetFPSHistory() const;
+	// Snapshot history.
 
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
 	TArray<FLunarPerformanceSnapshot> GetSnapshotHistory() const;
@@ -83,6 +80,38 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
 	float GetHistoryDurationSeconds() const;
+
+	// Float histories.
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetFPSHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetFrameTimeHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetProcessMemoryHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetPhysicalMemoryUsedPercentHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetSystemCPUUsageHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetProcessCPUUsageHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetGPUUsageHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetTexturePoolUsedPercentHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetDiskReadSpeedHistory() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
+	FLunarPerformanceFloatHistory GetDiskWriteSpeedHistory() const;
 
 	// Runtime detail level.
 	// If runtime override is disabled, the subsystem uses DefaultDetailLevel from Project Settings.
@@ -127,7 +156,10 @@ private:
 	void ApplySettings();
 
 	void AddSnapshotToHistory(const FLunarPerformanceSnapshot& Snapshot);
-	void RecalculateFPSHistoryStats();
+	void RecalculatePerformanceHistories();
+
+	void ResetFloatHistory(FLunarPerformanceFloatHistory& History) const;
+	void RecalculateFloatHistoryStats(FLunarPerformanceFloatHistory& History) const;
 
 private:
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance", meta = (AllowPrivateAccess = "true"))
@@ -137,10 +169,37 @@ private:
 	bool bHasCurrentSnapshot = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
-	FLunarPerformanceHistory FPSHistory;
+	TArray<FLunarPerformanceSnapshot> SnapshotHistory;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
-	TArray<FLunarPerformanceSnapshot> SnapshotHistory;
+	FLunarPerformanceFloatHistory FPSHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory FrameTimeHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory ProcessMemoryHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory PhysicalMemoryUsedPercentHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory SystemCPUUsageHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory ProcessCPUUsageHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory GPUUsageHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory TexturePoolUsedPercentHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory DiskReadSpeedHistory;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true"))
+	FLunarPerformanceFloatHistory DiskWriteSpeedHistory;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|History", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", UIMin = "1.0"))
 	float HistoryDurationSeconds = 60.0f;

@@ -14,7 +14,7 @@ void ULunarPerformanceSubsystem::Initialize(FSubsystemCollectionBase& Collection
 
 	ApplySettings();
 
-	FPSHistory.HistoryDurationSeconds = HistoryDurationSeconds;
+	RecalculatePerformanceHistories();
 }
 
 void ULunarPerformanceSubsystem::Deinitialize()
@@ -67,7 +67,7 @@ void ULunarPerformanceSubsystem::ApplySettings()
 		RuntimeDetailLevel = DefaultDetailLevel;
 	}
 
-	FPSHistory.HistoryDurationSeconds = HistoryDurationSeconds;
+	RecalculatePerformanceHistories();
 }
 
 TStatId ULunarPerformanceSubsystem::GetStatId() const
@@ -137,6 +137,16 @@ float ULunarPerformanceSubsystem::GetUpdateInterval() const
 	return UpdateInterval;
 }
 
+float ULunarPerformanceSubsystem::GetSecondsSinceLastSample() const
+{
+	if (LastSampleTimeSeconds <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	return static_cast<float>(FMath::Max(FPlatformTime::Seconds() - LastSampleTimeSeconds, 0.0));
+}
+
 void ULunarPerformanceSubsystem::UpdatePerformanceStats(bool bCollectData)
 {
 	CurrentSnapshot = LunarFL::Performance::GetPerformanceSnapshot(ELunarMemoryUnit::Gigabytes);
@@ -171,43 +181,30 @@ bool ULunarPerformanceSubsystem::HasCurrentSnapshot() const
 	return bHasCurrentSnapshot;
 }
 
-FLunarPerformanceHistory ULunarPerformanceSubsystem::GetFPSHistory() const
-{
-	return FPSHistory;
-}
-
 TArray<FLunarPerformanceSnapshot> ULunarPerformanceSubsystem::GetSnapshotHistory() const
 {
 	return SnapshotHistory;
-}
-
-float ULunarPerformanceSubsystem::GetSecondsSinceLastSample() const
-{
-	if (LastSampleTimeSeconds <= 0.0)
-	{
-		return 0.0f;
-	}
-
-	return static_cast<float>(
-		FMath::Max(FPlatformTime::Seconds() - LastSampleTimeSeconds, 0.0)
-		);
 }
 
 void ULunarPerformanceSubsystem::ClearPerformanceHistory()
 {
 	SnapshotHistory.Reset();
 
-	FPSHistory.FPSValues.Reset();
-	FPSHistory.AverageFPS = 0.0f;
-	FPSHistory.MinFPS = 0.0f;
-	FPSHistory.MaxFPS = 0.0f;
-	FPSHistory.HistoryDurationSeconds = HistoryDurationSeconds;
+	ResetFloatHistory(FPSHistory);
+	ResetFloatHistory(FrameTimeHistory);
+	ResetFloatHistory(ProcessMemoryHistory);
+	ResetFloatHistory(PhysicalMemoryUsedPercentHistory);
+	ResetFloatHistory(SystemCPUUsageHistory);
+	ResetFloatHistory(ProcessCPUUsageHistory);
+	ResetFloatHistory(GPUUsageHistory);
+	ResetFloatHistory(TexturePoolUsedPercentHistory);
+	ResetFloatHistory(DiskReadSpeedHistory);
+	ResetFloatHistory(DiskWriteSpeedHistory);
 }
 
 void ULunarPerformanceSubsystem::SetHistoryDurationSeconds(float DurationSeconds)
 {
 	HistoryDurationSeconds = FMath::Max(DurationSeconds, 1.0f);
-	FPSHistory.HistoryDurationSeconds = HistoryDurationSeconds;
 
 	if (bHasCurrentSnapshot)
 	{
@@ -215,13 +212,63 @@ void ULunarPerformanceSubsystem::SetHistoryDurationSeconds(float DurationSeconds
 	}
 	else
 	{
-		RecalculateFPSHistoryStats();
+		RecalculatePerformanceHistories();
 	}
 }
 
 float ULunarPerformanceSubsystem::GetHistoryDurationSeconds() const
 {
 	return HistoryDurationSeconds;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetFPSHistory() const
+{
+	return FPSHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetFrameTimeHistory() const
+{
+	return FrameTimeHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetProcessMemoryHistory() const
+{
+	return ProcessMemoryHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetPhysicalMemoryUsedPercentHistory() const
+{
+	return PhysicalMemoryUsedPercentHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetSystemCPUUsageHistory() const
+{
+	return SystemCPUUsageHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetProcessCPUUsageHistory() const
+{
+	return ProcessCPUUsageHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetGPUUsageHistory() const
+{
+	return GPUUsageHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetTexturePoolUsedPercentHistory() const
+{
+	return TexturePoolUsedPercentHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetDiskReadSpeedHistory() const
+{
+	return DiskReadSpeedHistory;
+}
+
+FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetDiskWriteSpeedHistory() const
+{
+	return DiskWriteSpeedHistory;
 }
 
 void ULunarPerformanceSubsystem::SetUseRuntimeDetailLevelOverride(bool bUseOverride)
@@ -358,40 +405,101 @@ void ULunarPerformanceSubsystem::AddSnapshotToHistory(const FLunarPerformanceSna
 		}
 	}
 
-	RecalculateFPSHistoryStats();
+	RecalculatePerformanceHistories();
 }
 
-void ULunarPerformanceSubsystem::RecalculateFPSHistoryStats()
+void ULunarPerformanceSubsystem::ResetFloatHistory(FLunarPerformanceFloatHistory& History) const
 {
-	FPSHistory.FPSValues.Reset();
-	FPSHistory.HistoryDurationSeconds = HistoryDurationSeconds;
+	History.Values.Reset();
+	History.Average = 0.0f;
+	History.Min = 0.0f;
+	History.Max = 0.0f;
+	History.HistoryDurationSeconds = HistoryDurationSeconds;
+}
 
-	if (SnapshotHistory.Num() <= 0)
+void ULunarPerformanceSubsystem::RecalculateFloatHistoryStats(FLunarPerformanceFloatHistory& History) const
+{
+	History.HistoryDurationSeconds = HistoryDurationSeconds;
+
+	if (History.Values.Num() <= 0)
 	{
-		FPSHistory.AverageFPS = 0.0f;
-		FPSHistory.MinFPS = 0.0f;
-		FPSHistory.MaxFPS = 0.0f;
+		History.Average = 0.0f;
+		History.Min = 0.0f;
+		History.Max = 0.0f;
 		return;
 	}
 
-	float SumFPS = 0.0f;
-	float MinFPS = TNumericLimits<float>::Max();
-	float MaxFPS = TNumericLimits<float>::Lowest();
+	float Sum = 0.0f;
+	float MinValue = TNumericLimits<float>::Max();
+	float MaxValue = TNumericLimits<float>::Lowest();
 
-	FPSHistory.FPSValues.Reserve(SnapshotHistory.Num());
+	for (const float Value : History.Values)
+	{
+		Sum += Value;
+		MinValue = FMath::Min(MinValue, Value);
+		MaxValue = FMath::Max(MaxValue, Value);
+	}
+
+	History.Average = Sum / static_cast<float>(History.Values.Num());
+	History.Min = MinValue;
+	History.Max = MaxValue;
+}
+
+void ULunarPerformanceSubsystem::RecalculatePerformanceHistories()
+{
+	ResetFloatHistory(FPSHistory);
+	ResetFloatHistory(FrameTimeHistory);
+	ResetFloatHistory(ProcessMemoryHistory);
+	ResetFloatHistory(PhysicalMemoryUsedPercentHistory);
+	ResetFloatHistory(SystemCPUUsageHistory);
+	ResetFloatHistory(ProcessCPUUsageHistory);
+	ResetFloatHistory(GPUUsageHistory);
+	ResetFloatHistory(TexturePoolUsedPercentHistory);
+	ResetFloatHistory(DiskReadSpeedHistory);
+	ResetFloatHistory(DiskWriteSpeedHistory);
+
+	if (SnapshotHistory.Num() <= 0)
+	{
+		return;
+	}
+
+	FPSHistory.Values.Reserve(SnapshotHistory.Num());
+	FrameTimeHistory.Values.Reserve(SnapshotHistory.Num());
+	ProcessMemoryHistory.Values.Reserve(SnapshotHistory.Num());
+	PhysicalMemoryUsedPercentHistory.Values.Reserve(SnapshotHistory.Num());
+	SystemCPUUsageHistory.Values.Reserve(SnapshotHistory.Num());
+	ProcessCPUUsageHistory.Values.Reserve(SnapshotHistory.Num());
+	GPUUsageHistory.Values.Reserve(SnapshotHistory.Num());
+	TexturePoolUsedPercentHistory.Values.Reserve(SnapshotHistory.Num());
+	DiskReadSpeedHistory.Values.Reserve(SnapshotHistory.Num());
+	DiskWriteSpeedHistory.Values.Reserve(SnapshotHistory.Num());
 
 	for (const FLunarPerformanceSnapshot& Snapshot : SnapshotHistory)
 	{
-		const float FPSValue = Snapshot.Frame.FPSFloat;
+		FPSHistory.Values.Add(Snapshot.Frame.FPSFloat);
+		FrameTimeHistory.Values.Add(Snapshot.Frame.FrameTimeMS);
 
-		FPSHistory.FPSValues.Add(FPSValue);
+		ProcessMemoryHistory.Values.Add(Snapshot.Memory.ProcessPhysicalMemory);
+		PhysicalMemoryUsedPercentHistory.Values.Add(Snapshot.Memory.PhysicalMemoryUsedPercent);
 
-		SumFPS += FPSValue;
-		MinFPS = FMath::Min(MinFPS, FPSValue);
-		MaxFPS = FMath::Max(MaxFPS, FPSValue);
+		SystemCPUUsageHistory.Values.Add(Snapshot.CPU.SystemCPUUsagePercent);
+		ProcessCPUUsageHistory.Values.Add(Snapshot.CPU.ProcessCPUUsagePercent);
+
+		GPUUsageHistory.Values.Add(Snapshot.GPU.ProcessGPU.TotalUsagePercent);
+		TexturePoolUsedPercentHistory.Values.Add(Snapshot.GPU.TexturePoolUsedPercent);
+
+		DiskReadSpeedHistory.Values.Add(Snapshot.Disk.ProcessReadSpeed);
+		DiskWriteSpeedHistory.Values.Add(Snapshot.Disk.ProcessWriteSpeed);
 	}
 
-	FPSHistory.AverageFPS = SumFPS / static_cast<float>(SnapshotHistory.Num());
-	FPSHistory.MinFPS = MinFPS;
-	FPSHistory.MaxFPS = MaxFPS;
+	RecalculateFloatHistoryStats(FPSHistory);
+	RecalculateFloatHistoryStats(FrameTimeHistory);
+	RecalculateFloatHistoryStats(ProcessMemoryHistory);
+	RecalculateFloatHistoryStats(PhysicalMemoryUsedPercentHistory);
+	RecalculateFloatHistoryStats(SystemCPUUsageHistory);
+	RecalculateFloatHistoryStats(ProcessCPUUsageHistory);
+	RecalculateFloatHistoryStats(GPUUsageHistory);
+	RecalculateFloatHistoryStats(TexturePoolUsedPercentHistory);
+	RecalculateFloatHistoryStats(DiskReadSpeedHistory);
+	RecalculateFloatHistoryStats(DiskWriteSpeedHistory);
 }
