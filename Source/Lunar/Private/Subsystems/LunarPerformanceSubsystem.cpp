@@ -2,23 +2,32 @@
 
 #include "Subsystems/LunarPerformanceSubsystem.h"
 
+#include "Blueprint/UserWidget.h"
 #include "HAL/PlatformTime.h"
 #include "LunarFL.h"
 #include "Settings/LunarSettings.h"
+#include "Subsystems/LunarRawInputSubsystem.h"
 
 void ULunarPerformanceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
+	Collection.InitializeDependency(ULunarRawInputSubsystem::StaticClass());
+
 	LastSampleTimeSeconds = 0.0;
+	DetailLevel = ELunarPerformanceSummaryDetail::Low;
 
 	ApplySettings();
 
 	RecalculatePerformanceHistories();
-}
 
+	BindRawInputSubsystem();
+}
 void ULunarPerformanceSubsystem::Deinitialize()
 {
+	UnbindRawInputSubsystem();
+	HidePerformanceWidget();
+
 	bMonitoringEnabled = false;
 	bCollectPerformanceData = false;
 
@@ -32,6 +41,7 @@ void ULunarPerformanceSubsystem::Deinitialize()
 	ClearPerformanceHistory();
 
 	OnPerformanceSnapshotUpdated.Clear();
+	OnDetailLevelChanged.Clear();
 
 	Super::Deinitialize();
 }
@@ -60,14 +70,16 @@ void ULunarPerformanceSubsystem::ApplySettings()
 	bEnabledInCommandlet = Settings.Environment.bEnabledInCommandlet;
 	bEnabledOnDedicatedServer = Settings.Environment.bEnabledOnDedicatedServer;
 
-	DefaultDetailLevel = Settings.Display.DefaultDetailLevel;
+	bDisplayEnabled = Settings.Display.bDisplayEnabled;
+	bDisplayEnabledInEditor = Settings.Display.bEnabledInEditor;
+	bDisplayEnabledInDebug = Settings.Display.bEnabledInDebug;
+	bDisplayEnabledInDevelopment = Settings.Display.bEnabledInDevelopment;
+	bDisplayEnabledInTest = Settings.Display.bEnabledInTest;
+	bDisplayEnabledInShipping = Settings.Display.bEnabledInShipping;
 
-	if (!bUseRuntimeDetailLevelOverride)
-	{
-		RuntimeDetailLevel = DefaultDetailLevel;
-	}
-
-	RecalculatePerformanceHistories();
+	bEnablePerformanceWidgetHotkey = Settings.Display.bEnableToggleHotkey;
+	PerformanceWidgetKey = Settings.Display.ToggleWidgetHotkey;
+	PerformanceWidgetClass = Settings.Display.WidgetClass.LoadSynchronous();
 }
 
 TStatId ULunarPerformanceSubsystem::GetStatId() const
@@ -160,14 +172,14 @@ void ULunarPerformanceSubsystem::UpdatePerformanceStats(bool bCollectData)
 
 	if (bCollectData)
 	{
-		const ELunarPerformanceSummaryDetail EffectiveDetailLevel = GetEffectiveDetailLevel();
-
-		UE_LOG(
-			LogTemp,
-			Log,
-			TEXT("LunarPerformanceSubsystem:\n%s"),
-			*LunarFL::Performance::GetPerformanceSummaryMultilineString(EffectiveDetailLevel, ELunarMemoryUnit::Megabytes)
-		);
+		//TODO send to console
+		
+		//UE_LOG(
+		//	LogTemp,
+		//	Log,
+		//	TEXT("LunarPerformanceSubsystem:\n%s"),
+		//	*LunarFL::Performance::GetPerformanceSummaryMultilineString(DetailLevel, ELunarMemoryUnit::Megabytes)
+		//);
 	}
 }
 
@@ -190,16 +202,7 @@ void ULunarPerformanceSubsystem::ClearPerformanceHistory()
 {
 	SnapshotHistory.Reset();
 
-	ResetFloatHistory(FPSHistory);
-	ResetFloatHistory(FrameTimeHistory);
-	ResetFloatHistory(ProcessMemoryHistory);
-	ResetFloatHistory(PhysicalMemoryUsedPercentHistory);
-	ResetFloatHistory(SystemCPUUsageHistory);
-	ResetFloatHistory(ProcessCPUUsageHistory);
-	ResetFloatHistory(GPUUsageHistory);
-	ResetFloatHistory(TexturePoolUsedPercentHistory);
-	ResetFloatHistory(DiskReadSpeedHistory);
-	ResetFloatHistory(DiskWriteSpeedHistory);
+	RecalculatePerformanceHistories();
 }
 
 void ULunarPerformanceSubsystem::SetHistoryDurationSeconds(float DurationSeconds)
@@ -271,45 +274,23 @@ FLunarPerformanceFloatHistory ULunarPerformanceSubsystem::GetDiskWriteSpeedHisto
 	return DiskWriteSpeedHistory;
 }
 
-void ULunarPerformanceSubsystem::SetUseRuntimeDetailLevelOverride(bool bUseOverride)
+ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::SetDetailLevel(ELunarPerformanceSummaryDetail NewDetailLevel)
 {
-	if (bUseRuntimeDetailLevelOverride == bUseOverride)
+	if (DetailLevel == NewDetailLevel)
 	{
-		return;
+		return DetailLevel;
 	}
 
-	bUseRuntimeDetailLevelOverride = bUseOverride;
+	DetailLevel = NewDetailLevel;
 
-	if (!bUseRuntimeDetailLevelOverride)
-	{
-		RuntimeDetailLevel = DefaultDetailLevel;
-	}
+	OnDetailLevelChanged.Broadcast(DetailLevel);
+
+	return DetailLevel;
 }
 
-bool ULunarPerformanceSubsystem::IsUsingRuntimeDetailLevelOverride() const
+ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::GetDetailLevel() const
 {
-	return bUseRuntimeDetailLevelOverride;
-}
-
-void ULunarPerformanceSubsystem::SetRuntimeDetailLevel(ELunarPerformanceSummaryDetail DetailLevel)
-{
-	RuntimeDetailLevel = DetailLevel;
-	bUseRuntimeDetailLevelOverride = true;
-}
-
-ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::GetRuntimeDetailLevel() const
-{
-	return RuntimeDetailLevel;
-}
-
-ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::GetDefaultDetailLevel() const
-{
-	return DefaultDetailLevel;
-}
-
-ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::GetEffectiveDetailLevel() const
-{
-	return bUseRuntimeDetailLevelOverride ? RuntimeDetailLevel : DefaultDetailLevel;
+	return DetailLevel;
 }
 
 bool ULunarPerformanceSubsystem::SetCollectPerformanceData(bool bCollect)
@@ -390,6 +371,216 @@ bool ULunarPerformanceSubsystem::CanMonitorInCurrentEnvironment() const
 	return true;
 }
 
+bool ULunarPerformanceSubsystem::IsPerformanceWidgetActive() const
+{
+	return PerformanceWidgetInstance && PerformanceWidgetInstance->IsInViewport();
+}
+
+void ULunarPerformanceSubsystem::ShowPerformanceWidget()
+{
+	if (!CanUsePerformanceWidgetHotkey())
+	{
+		return;
+	}
+
+	if (PerformanceWidgetInstance && PerformanceWidgetInstance->IsInViewport())
+	{
+		return;
+	}
+
+	if (!PerformanceWidgetInstance)
+	{
+		UWorld* World = GetWorld();
+
+		if (!World)
+		{
+			return;
+		}
+
+		PerformanceWidgetInstance = CreateWidget<UUserWidget>(World, PerformanceWidgetClass);
+
+		if (!PerformanceWidgetInstance)
+		{
+			return;
+		}
+	}
+
+	PerformanceWidgetInstance->AddToViewport(PerformanceWidgetZOrder);
+}
+
+void ULunarPerformanceSubsystem::HidePerformanceWidget()
+{
+	if (PerformanceWidgetInstance)
+	{
+		PerformanceWidgetInstance->RemoveFromParent();
+	}
+
+	PerformanceWidgetInstance = nullptr;
+}
+
+void ULunarPerformanceSubsystem::TogglePerformanceWidgetDetailLevel()
+{
+	if (!IsPerformanceWidgetActive())
+	{
+		SetDetailLevel(ELunarPerformanceSummaryDetail::Low);
+		ShowPerformanceWidget();
+		return;
+	}
+
+	ELunarPerformanceSummaryDetail NextDetailLevel = ELunarPerformanceSummaryDetail::Low;
+
+	if (TryGetNextDetailLevel(DetailLevel, NextDetailLevel))
+	{
+		SetDetailLevel(NextDetailLevel);
+		return;
+	}
+
+	HidePerformanceWidget();
+	SetDetailLevel(ELunarPerformanceSummaryDetail::Low);
+}
+
+void ULunarPerformanceSubsystem::BindRawInputSubsystem()
+{
+	if (!GetGameInstance())
+	{
+		return;
+	}
+
+	RawInputSubsystem = GetGameInstance()->GetSubsystem<ULunarRawInputSubsystem>();
+
+	if (!RawInputSubsystem)
+	{
+		return;
+	}
+
+	RawInputSubsystem->OnKeyClicked.RemoveDynamic(this, &ULunarPerformanceSubsystem::HandleRawInputKeyClicked);
+	RawInputSubsystem->OnKeyClicked.AddDynamic(this, &ULunarPerformanceSubsystem::HandleRawInputKeyClicked);
+}
+
+void ULunarPerformanceSubsystem::UnbindRawInputSubsystem()
+{
+	if (RawInputSubsystem)
+	{
+		RawInputSubsystem->OnKeyClicked.RemoveDynamic(this, &ULunarPerformanceSubsystem::HandleRawInputKeyClicked);
+	}
+
+	RawInputSubsystem = nullptr;
+}
+
+void ULunarPerformanceSubsystem::HandleRawInputKeyClicked(FKey Key)
+{
+	if (Key != PerformanceWidgetKey)
+	{
+		return;
+	}
+
+	if (!CanUsePerformanceWidgetHotkey())
+	{
+		return;
+	}
+
+	TogglePerformanceWidgetDetailLevel();
+}
+
+bool ULunarPerformanceSubsystem::CanUsePerformanceWidgetHotkey() const
+{
+	if (!bDisplayEnabled)
+	{
+		return false;
+	}
+
+	if (!bEnablePerformanceWidgetHotkey)
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsCommandlet())
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsDedicatedServer())
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsEditor() && !bDisplayEnabledInEditor)
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsDebug() && !bDisplayEnabledInDebug)
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsDevelopment() && !bDisplayEnabledInDevelopment)
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsTest() && !bDisplayEnabledInTest)
+	{
+		return false;
+	}
+
+	if (LunarFL::Game::IsShipping() && !bDisplayEnabledInShipping)
+	{
+		return false;
+	}
+
+	if (!PerformanceWidgetClass)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool ULunarPerformanceSubsystem::TryGetNextDetailLevel(ELunarPerformanceSummaryDetail CurrentDetailLevel, ELunarPerformanceSummaryDetail& OutNextDetailLevel) const
+{
+	const UEnum* DetailEnum = StaticEnum<ELunarPerformanceSummaryDetail>();
+
+	if (!DetailEnum)
+	{
+		return false;
+	}
+
+	const int64 CurrentValue = static_cast<int64>(CurrentDetailLevel);
+
+	bool bFoundCurrent = false;
+
+	for (int32 Index = 0; Index < DetailEnum->NumEnums(); ++Index)
+	{
+		if (DetailEnum->HasMetaData(TEXT("Hidden"), Index))
+		{
+			continue;
+		}
+
+		const FString EnumName = DetailEnum->GetNameStringByIndex(Index);
+
+		if (EnumName.EndsWith(TEXT("MAX")) || EnumName.EndsWith(TEXT("Max")))
+		{
+			continue;
+		}
+
+		const int64 EnumValue = DetailEnum->GetValueByIndex(Index);
+
+		if (bFoundCurrent)
+		{
+			OutNextDetailLevel = static_cast<ELunarPerformanceSummaryDetail>(EnumValue);
+			return true;
+		}
+
+		if (EnumValue == CurrentValue)
+		{
+			bFoundCurrent = true;
+		}
+	}
+
+	return false;
+}
+
 void ULunarPerformanceSubsystem::AddSnapshotToHistory(const FLunarPerformanceSnapshot& Snapshot)
 {
 	SnapshotHistory.Add(Snapshot);
@@ -406,43 +597,6 @@ void ULunarPerformanceSubsystem::AddSnapshotToHistory(const FLunarPerformanceSna
 	}
 
 	RecalculatePerformanceHistories();
-}
-
-void ULunarPerformanceSubsystem::ResetFloatHistory(FLunarPerformanceFloatHistory& History) const
-{
-	History.Values.Reset();
-	History.Average = 0.0f;
-	History.Min = 0.0f;
-	History.Max = 0.0f;
-	History.HistoryDurationSeconds = HistoryDurationSeconds;
-}
-
-void ULunarPerformanceSubsystem::RecalculateFloatHistoryStats(FLunarPerformanceFloatHistory& History) const
-{
-	History.HistoryDurationSeconds = HistoryDurationSeconds;
-
-	if (History.Values.Num() <= 0)
-	{
-		History.Average = 0.0f;
-		History.Min = 0.0f;
-		History.Max = 0.0f;
-		return;
-	}
-
-	float Sum = 0.0f;
-	float MinValue = TNumericLimits<float>::Max();
-	float MaxValue = TNumericLimits<float>::Lowest();
-
-	for (const float Value : History.Values)
-	{
-		Sum += Value;
-		MinValue = FMath::Min(MinValue, Value);
-		MaxValue = FMath::Max(MaxValue, Value);
-	}
-
-	History.Average = Sum / static_cast<float>(History.Values.Num());
-	History.Min = MinValue;
-	History.Max = MaxValue;
 }
 
 void ULunarPerformanceSubsystem::RecalculatePerformanceHistories()
@@ -502,4 +656,41 @@ void ULunarPerformanceSubsystem::RecalculatePerformanceHistories()
 	RecalculateFloatHistoryStats(TexturePoolUsedPercentHistory);
 	RecalculateFloatHistoryStats(DiskReadSpeedHistory);
 	RecalculateFloatHistoryStats(DiskWriteSpeedHistory);
+}
+
+void ULunarPerformanceSubsystem::ResetFloatHistory(FLunarPerformanceFloatHistory& History) const
+{
+	History.Values.Reset();
+	History.Average = 0.0f;
+	History.Min = 0.0f;
+	History.Max = 0.0f;
+	History.HistoryDurationSeconds = HistoryDurationSeconds;
+}
+
+void ULunarPerformanceSubsystem::RecalculateFloatHistoryStats(FLunarPerformanceFloatHistory& History) const
+{
+	History.HistoryDurationSeconds = HistoryDurationSeconds;
+
+	if (History.Values.Num() <= 0)
+	{
+		History.Average = 0.0f;
+		History.Min = 0.0f;
+		History.Max = 0.0f;
+		return;
+	}
+
+	float Sum = 0.0f;
+	float MinValue = TNumericLimits<float>::Max();
+	float MaxValue = TNumericLimits<float>::Lowest();
+
+	for (const float Value : History.Values)
+	{
+		Sum += Value;
+		MinValue = FMath::Min(MinValue, Value);
+		MaxValue = FMath::Max(MaxValue, Value);
+	}
+
+	History.Average = Sum / static_cast<float>(History.Values.Num());
+	History.Min = MinValue;
+	History.Max = MaxValue;
 }

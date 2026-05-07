@@ -297,14 +297,26 @@ struct LUNAR_API FLunarPerformanceDisplaySettings
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display", meta = (DisplayName = "Widget Class", ToolTip = "Widget class used to display Lunar performance data."))
 	TSoftClassPtr<UUserWidget> WidgetClass = TSoftClassPtr<UUserWidget>(FSoftClassPath(TEXT("/Lunar/Widgets/Global/W_Performance.W_Performance_C")));
 
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Environment", meta = (DisplayName = "Enabled In Editor", ToolTip = "Allows the performance widget UI in editor builds."))
+	bool bEnabledInEditor = true;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Environment", meta = (DisplayName = "Enabled In Debug", ToolTip = "Allows the performance widget UI in Debug builds."))
+	bool bEnabledInDebug = true;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Environment", meta = (DisplayName = "Enabled In Development", ToolTip = "Allows the performance widget UI in Development builds."))
+	bool bEnabledInDevelopment = true;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Environment", meta = (DisplayName = "Enabled In Test", ToolTip = "Allows the performance widget UI in Test builds."))
+	bool bEnabledInTest = true;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Environment", meta = (DisplayName = "Enabled In Shipping", ToolTip = "Allows the performance widget UI in Shipping builds. Usually disabled by default."))
+	bool bEnabledInShipping = false;
+
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Input", meta = (DisplayName = "Enable Toggle Hotkey", ToolTip = "If enabled, the performance widget can be shown or hidden using the configured hotkey."))
 	bool bEnableToggleHotkey = true;
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display|Input", meta = (DisplayName = "Toggle Widget Hotkey", ToolTip = "Keyboard key used to show or hide the performance widget."))
 	FKey ToggleWidgetHotkey = EKeys::F10;
-
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Display", meta = (DisplayName = "Default Detail Level", ToolTip = "Default amount of performance information shown by the performance widget."))
-	ELunarPerformanceSummaryDetail DefaultDetailLevel = ELunarPerformanceSummaryDetail::Full;
 };
 
 USTRUCT(BlueprintType)

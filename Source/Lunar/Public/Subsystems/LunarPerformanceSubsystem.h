@@ -3,15 +3,25 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "LunarTypes.h"
 #include "LunarPerformanceSubsystem.generated.h"
 
+class ULunarRawInputSubsystem;
+class UUserWidget;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FLunarPerformanceSnapshotUpdatedSignature,
 	const FLunarPerformanceSnapshot&,
 	Snapshot
+);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FLunarPerformanceDetailLevelChangedSignature,
+	ELunarPerformanceSummaryDetail,
+	NewDetailLevel
 );
 
 UCLASS()
@@ -31,6 +41,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|Subsystems|Performance")
 	FLunarPerformanceSnapshotUpdatedSignature OnPerformanceSnapshotUpdated;
+
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|Subsystems|Performance|Detail")
+	FLunarPerformanceDetailLevelChangedSignature OnDetailLevelChanged;
 
 	// Runtime monitoring control.
 
@@ -113,27 +126,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|History")
 	FLunarPerformanceFloatHistory GetDiskWriteSpeedHistory() const;
 
-	// Runtime detail level.
-	// If runtime override is disabled, the subsystem uses DefaultDetailLevel from Project Settings.
-	// If runtime override is enabled, the subsystem uses RuntimeDetailLevel.
+	// Detail level.
 
 	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Detail")
-	void SetUseRuntimeDetailLevelOverride(bool bUseOverride);
+	ELunarPerformanceSummaryDetail SetDetailLevel(ELunarPerformanceSummaryDetail NewDetailLevel);
 
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Detail")
-	bool IsUsingRuntimeDetailLevelOverride() const;
-
-	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Detail")
-	void SetRuntimeDetailLevel(ELunarPerformanceSummaryDetail DetailLevel);
-
-	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Detail")
-	ELunarPerformanceSummaryDetail GetRuntimeDetailLevel() const;
-
-	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Detail")
-	ELunarPerformanceSummaryDetail GetDefaultDetailLevel() const;
-
-	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Detail")
-	ELunarPerformanceSummaryDetail GetEffectiveDetailLevel() const;
+	ELunarPerformanceSummaryDetail GetDetailLevel() const;
 
 	// Data collection.
 
@@ -152,6 +151,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance")
 	bool CanMonitorInCurrentEnvironment() const;
 
+	// Performance widget.
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Widget")
+	bool IsPerformanceWidgetActive() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Widget")
+	void ShowPerformanceWidget();
+
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Widget")
+	void HidePerformanceWidget();
+
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Widget")
+	void TogglePerformanceWidgetDetailLevel();
+
 private:
 	void ApplySettings();
 
@@ -160,6 +173,15 @@ private:
 
 	void ResetFloatHistory(FLunarPerformanceFloatHistory& History) const;
 	void RecalculateFloatHistoryStats(FLunarPerformanceFloatHistory& History) const;
+
+	void BindRawInputSubsystem();
+	void UnbindRawInputSubsystem();
+
+	UFUNCTION()
+	void HandleRawInputKeyClicked(FKey Key);
+
+	bool CanUsePerformanceWidgetHotkey() const;
+	bool TryGetNextDetailLevel(ELunarPerformanceSummaryDetail CurrentDetailLevel, ELunarPerformanceSummaryDetail& OutNextDetailLevel) const;
 
 private:
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance", meta = (AllowPrivateAccess = "true"))
@@ -205,13 +227,16 @@ private:
 	float HistoryDurationSeconds = 60.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|Detail", meta = (AllowPrivateAccess = "true"))
-	bool bUseRuntimeDetailLevelOverride = false;
+	ELunarPerformanceSummaryDetail DetailLevel = ELunarPerformanceSummaryDetail::Low;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|Detail", meta = (AllowPrivateAccess = "true"))
-	ELunarPerformanceSummaryDetail RuntimeDetailLevel = ELunarPerformanceSummaryDetail::Normal;
+	UPROPERTY(Transient)
+	TObjectPtr<ULunarRawInputSubsystem> RawInputSubsystem = nullptr;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|Detail", meta = (AllowPrivateAccess = "true"))
-	ELunarPerformanceSummaryDetail DefaultDetailLevel = ELunarPerformanceSummaryDetail::Normal;
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> PerformanceWidgetInstance = nullptr;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UUserWidget> PerformanceWidgetClass;
 
 	double LastSampleTimeSeconds = 0.0;
 
@@ -220,6 +245,10 @@ private:
 
 	float CollectPerformanceDataInterval = 10.0f;
 	float TimeSinceLastCollectPerformanceData = 0.0f;
+
+	int32 PerformanceWidgetZOrder = 9999;
+
+	FKey PerformanceWidgetKey = EKeys::F10;
 
 	bool bMonitoringEnabled = false;
 	bool bCollectPerformanceData = false;
@@ -232,4 +261,13 @@ private:
 
 	bool bEnabledInCommandlet = false;
 	bool bEnabledOnDedicatedServer = false;
+
+	bool bDisplayEnabled = true;
+	bool bDisplayEnabledInEditor = true;
+	bool bDisplayEnabledInDebug = true;
+	bool bDisplayEnabledInDevelopment = true;
+	bool bDisplayEnabledInTest = true;
+	bool bDisplayEnabledInShipping = false;
+
+	bool bEnablePerformanceWidgetHotkey = true;
 };

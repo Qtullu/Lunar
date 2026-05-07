@@ -19,3 +19,4 @@
 //#include "LunarTypesBlockout.h"
 //#include "LunarTypesJSON.h"
 #include "LunarTypesPerformance.h"
+#include "LunarRawInputTypes.h"

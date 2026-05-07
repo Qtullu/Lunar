@@ -13,7 +13,7 @@ public class Lunar : ModuleRules
             new string[]
             {
                 Path.Combine(ModuleDirectory, "Public", "FunctionLibraries"),
-                Path.Combine(ModuleDirectory, "Public", "Types")
+                Path.Combine(ModuleDirectory, "Public", "Types"),
             }
         );
 
@@ -43,7 +43,8 @@ public class Lunar : ModuleRules
             new string[]
             {
                 "Slate",
-                "SlateCore"
+                "SlateCore",
+                "ApplicationCore"
             }
         );
 
