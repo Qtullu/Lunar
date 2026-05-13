@@ -19,6 +19,7 @@
 #include "LunarFLBlockout.h"
 #include "LunarFLJSON.h"
 #include "LunarFLPerformance.h"
+#include "LunarFLConsole.h"
 
 namespace LunarFL
 {
@@ -37,4 +38,5 @@ namespace LunarFL
 	using Blockout = ULunarFLBlockout;
 	using JSON = ULunarFLJSON;
 	using Performance = ULunarFLPerformance;
+	using Console = ULunarFLConsole;
 }

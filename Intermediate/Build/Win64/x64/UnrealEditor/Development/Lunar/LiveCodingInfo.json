@@ -3,12 +3,17 @@
 	{
 		"Module.Lunar.1.cpp.obj": [
 			"Lunar.init.gen.cpp.obj",
+			"LunarConsoleSubsystem.gen.cpp.obj",
+			"LunarDraggableWindow.gen.cpp.obj",
 			"LunarFLAudio.gen.cpp.obj",
 			"LunarFLBlockout.gen.cpp.obj",
 			"LunarFLChrono.gen.cpp.obj",
+			"LunarFLConsole.gen.cpp.obj",
 			"LunarFLDataTable.gen.cpp.obj",
 			"LunarFLDebug.gen.cpp.obj",
-			"LunarFLGame.gen.cpp.obj",
+			"LunarFLGame.gen.cpp.obj"
+		],
+		"Module.Lunar.2.cpp.obj": [
 			"LunarFLJSON.gen.cpp.obj",
 			"LunarFLMath.gen.cpp.obj",
 			"LunarFLNetworking.gen.cpp.obj",
@@ -18,16 +23,17 @@
 			"LunarFLString.gen.cpp.obj",
 			"LunarFLUI.gen.cpp.obj",
 			"LunarPerformanceSubsystem.gen.cpp.obj",
-			"LunarRawInputSubsystem.gen.cpp.obj"
-		],
-		"Module.Lunar.2.cpp.obj": [
+			"LunarRawInputSubsystem.gen.cpp.obj",
 			"LunarRawInputTypes.gen.cpp.obj",
 			"LunarSettings.gen.cpp.obj",
+			"LunarTypesConsole.gen.cpp.obj"
+		],
+		"Module.Lunar.3.cpp.obj": [
 			"LunarTypesGame.gen.cpp.obj",
 			"LunarTypesPerformance.gen.cpp.obj",
 			"PerModuleInline.gen.cpp.obj"
 		],
-		"Module.Lunar.3.cpp.obj": [
+		"Module.Lunar.4.cpp.obj": [
 			"LunarFLPerformance.gen.cpp.obj"
 		]
 	}

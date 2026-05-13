@@ -1,14 +1,17 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+#include "GameplayTagsManager.h"
 #include "Lunar.h"
 
 #define LOCTEXT_NAMESPACE "FLunarModule"
 
 void FLunarModule::StartupModule()
 {
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
-}
+	UGameplayTagsManager& TagsManager = UGameplayTagsManager::Get();
 
+	TagsManager.AddNativeGameplayTag(TEXT("Lunar"), TEXT("Root tag for Lunar plugin."));
+	TagsManager.AddNativeGameplayTag(TEXT("Lunar.Console"), TEXT("Lunar console messages and commands."));
+}
 void FLunarModule::ShutdownModule()
 {
 	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
