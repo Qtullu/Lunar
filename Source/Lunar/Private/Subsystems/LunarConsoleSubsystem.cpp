@@ -13,6 +13,8 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/UnrealType.h"
 
+TWeakObjectPtr<ULunarConsoleSubsystem> ULunarConsoleSubsystem::ActiveConsoleSubsystem;
+
 void ULunarConsoleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -21,11 +23,18 @@ void ULunarConsoleSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	ReloadCommands();
 	BindRawInput();
+
+	ActiveConsoleSubsystem = this;
 }
 
 void ULunarConsoleSubsystem::Deinitialize()
 {
 	UnbindRawInput();
+
+	if (ActiveConsoleSubsystem.Get() == this)
+	{
+		ActiveConsoleSubsystem.Reset();
+	}
 
 	if (ConsoleWidgetInstance)
 	{
@@ -44,7 +53,20 @@ void ULunarConsoleSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+ULunarConsoleSubsystem* ULunarConsoleSubsystem::Get()
+{
+	return ActiveConsoleSubsystem.Get();
+}
+
 void ULunarConsoleSubsystem::AddMessage(FGameplayTag Category, ELunarConsoleMessageVerbosity Verbosity, const FString& Text)
+{
+	if (ULunarConsoleSubsystem* ConsoleSubsystem = ActiveConsoleSubsystem.Get())
+	{
+		ConsoleSubsystem->BP_AddMessage(Category, Verbosity, Text);
+	}
+}
+
+void ULunarConsoleSubsystem::BP_AddMessage(FGameplayTag Category, ELunarConsoleMessageVerbosity Verbosity, const FString& Text)
 {
 	const FLunarConsoleSettings& Settings = GetConsoleSettings();
 
@@ -103,37 +125,67 @@ void ULunarConsoleSubsystem::ReloadCommands()
 
 	const FLunarConsoleSettings& Settings = GetConsoleSettings();
 
-	if (!Settings.CommandsDataTable)
+	if (Settings.CommandTables.Num() <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("LunarConsole: CommandsDataTable is not set."));
+		UE_LOG(LogTemp, Warning, TEXT("LunarConsole: CommandTables is empty."));
 		return;
 	}
 
-	TArray<FLunarConsoleCommandRow*> Rows;
-	Settings.CommandsDataTable->GetAllRows<FLunarConsoleCommandRow>(TEXT("LunarConsoleCommands"), Rows);
-
-	for (const FLunarConsoleCommandRow* Row : Rows)
+	for (const FLunarConsoleCommandTable& CommandTable : Settings.CommandTables)
 	{
-		if (!Row)
+		if (!CommandTable.bEnabled)
 		{
 			continue;
 		}
 
-		if (!Row->bEnabled || Row->Command.IsNone() || Row->FunctionName.IsNone() || !Row->Class)
+		if (!CommandTable.CommandsDataTable)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("LunarConsole: CommandsDataTable is not set for prefix: %s"), *CommandTable.Prefix.ToString());
 			continue;
 		}
 
-		FLunarConsoleCommandDefinition Definition;
-		Definition.Class = Row->Class;
-		Definition.FunctionName = Row->FunctionName;
-		Definition.Command = Row->Command;
-		Definition.ParameterType = Row->ParameterType;
-		Definition.PreviewValue = Row->PreviewValue;
-		Definition.Description = Row->Description;
-		Definition.bEnabled = Row->bEnabled;
+		TArray<FLunarConsoleCommandRow*> Rows;
+		CommandTable.CommandsDataTable->GetAllRows<FLunarConsoleCommandRow>(TEXT("LunarConsoleCommands"), Rows);
 
-		CommandsByName.Add(Definition.Command, Definition);
+		for (const FLunarConsoleCommandRow* Row : Rows)
+		{
+			if (!Row)
+			{
+				continue;
+			}
+
+			if (!Row->bEnabled || Row->Command.IsNone() || Row->FunctionName.IsNone() || !Row->Class)
+			{
+				continue;
+			}
+
+			const FString RawCommandString = Row->Command.ToString();
+			FString FullCommandString = RawCommandString;
+
+			if (!CommandTable.Prefix.IsNone())
+			{
+				FullCommandString = CommandTable.Prefix.ToString() + TEXT(".") + RawCommandString;
+			}
+
+			const FName FullCommandName = FName(*FullCommandString);
+
+			if (CommandsByName.Contains(FullCommandName))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("LunarConsole: Duplicate command skipped: %s"), *FullCommandString);
+				continue;
+			}
+
+			FLunarConsoleCommandDefinition Definition;
+			Definition.Class = Row->Class;
+			Definition.FunctionName = Row->FunctionName;
+			Definition.Command = FullCommandName;
+			Definition.ParameterType = Row->ParameterType;
+			Definition.PreviewValue = Row->PreviewValue;
+			Definition.Description = Row->Description;
+			Definition.bEnabled = Row->bEnabled;
+
+			CommandsByName.Add(Definition.Command, Definition);
+		}
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("LunarConsole: Loaded commands: %d"), CommandsByName.Num());

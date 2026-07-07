@@ -14,4 +14,10 @@ class LUNAR_API ULunarFLMath : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 	
+public:
+	UFUNCTION(BlueprintPure, Category = "Lunar|Math", meta = (DisplayName = "Negate"))
+	static float NegateFloat(float Value);
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Math", meta = (DisplayName = "Negate"))
+	static int32 NegateInt(int32 Value);
 };

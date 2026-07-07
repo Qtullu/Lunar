@@ -37,10 +37,7 @@
 /NOIMPLIB
 /NOEXP
 "X:/Projects/Lunar_proj/Intermediate/Build/Win64/x64/Lunar_projEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.1.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.2.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.3.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.4.cpp.obj"
+"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Lunar.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLAudio.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLBlockout.cpp.obj"
@@ -57,6 +54,7 @@
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLRandom.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLSave.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLString.cpp.obj"
+"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLTransform.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLUI.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarSettings.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarConsoleSubsystem.cpp.obj"
@@ -104,7 +102,7 @@
 "imm32.lib"
 "pdh.lib"
 "uiautomationcore.lib"
-"DXGI.lib"
+"shcore.lib"
 /OUT:"X:/Projects/Lunar_proj/Plugins/Lunar/Binaries/Win64/UnrealEditor-Lunar.dll"
 /PDB:"X:/Projects/Lunar_proj/Plugins/Lunar/Binaries/Win64/UnrealEditor-Lunar.pdb"
 /ignore:4078

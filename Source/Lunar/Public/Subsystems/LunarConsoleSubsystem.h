@@ -25,8 +25,13 @@ public:
 	virtual void Deinitialize() override;
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Console")
-	void AddMessage(FGameplayTag Category, ELunarConsoleMessageVerbosity Verbosity, const FString& Text);
+
+	static ULunarConsoleSubsystem* Get();
+
+	static void AddMessage(FGameplayTag Category, ELunarConsoleMessageVerbosity Verbosity, const FString& Text);
+
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Console", meta = (DisplayName = "Add Message"))
+	void BP_AddMessage(FGameplayTag Category, ELunarConsoleMessageVerbosity Verbosity, const FString& Text);
 
 	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Console")
 	void ClearMessages();
@@ -117,4 +122,6 @@ private:
 	APlayerController* GetFirstLocalPlayerController() const;
 	void ApplyConsoleInputMode();
 	void RestorePreviousInputMode();
+
+	static TWeakObjectPtr<ULunarConsoleSubsystem> ActiveConsoleSubsystem;
 };

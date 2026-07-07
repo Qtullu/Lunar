@@ -43,6 +43,22 @@ enum class ELunarConsoleInputModeAfterClose : uint8
 };
 
 USTRUCT(BlueprintType)
+struct LUNAR_API FLunarConsoleCommandTable
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console")
+	FName Prefix = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console")
+	TObjectPtr<UDataTable> CommandsDataTable = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console")
+	bool bEnabled = true;
+};
+
+USTRUCT(BlueprintType)
 struct LUNAR_API FLunarConsoleMessage
 {
 	GENERATED_BODY()
@@ -151,7 +167,7 @@ public:
 	int32 MaxMessages = 1000;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Commands")
-	TObjectPtr<UDataTable> CommandsDataTable = nullptr;
+	TArray<FLunarConsoleCommandTable> CommandTables;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Widget")
 	FKey ConsoleHotkey = EKeys::F9;
@@ -178,7 +194,7 @@ public:
 	bool bAddTimestampToFormattedText = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Log")
-	FString TimestampFormat = TEXT("%H:%M:%S");
+	FString TimestampFormat = TEXT("%d.%m.%Y %H:%M:%S");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Colors")
 	FLinearColor MessageColor = FLinearColor(0.80f, 0.80f, 0.80f, 1.0f);

@@ -2,15 +2,13 @@
 /errorReport:prompt
 /MACHINE:x64
 /SUBSYSTEM:WINDOWS
+/experimental:deterministic
 /DEF
 /NAME:"UnrealEditor-Lunar.dll"
 /IGNORE:4221
 /NODEFAULTLIB
 "X:/Projects/Lunar_proj/Intermediate/Build/Win64/x64/Lunar_projEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.1.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.2.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.3.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.4.cpp.obj"
+"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Module.Lunar.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Lunar.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLAudio.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLBlockout.cpp.obj"
@@ -27,6 +25,7 @@
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLRandom.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLSave.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLString.cpp.obj"
+"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLTransform.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarFLUI.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarSettings.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarConsoleSubsystem.cpp.obj"
@@ -34,5 +33,4 @@
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarRawInputProcessor.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarRawInputSubsystem.cpp.obj"
 "X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/LunarDraggableWindow.cpp.obj"
-"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/Default.rc2.res"
 /OUT:"X:/Projects/Lunar_proj/Plugins/Lunar/Intermediate/Build/Win64/x64/UnrealEditor/Development/Lunar/UnrealEditor-Lunar.lib"

@@ -20,6 +20,7 @@
 #include "LunarFLJSON.h"
 #include "LunarFLPerformance.h"
 #include "LunarFLConsole.h"
+#include "LunarFLTransform.h"
 
 namespace LunarFL
 {
@@ -39,4 +40,5 @@ namespace LunarFL
 	using JSON = ULunarFLJSON;
 	using Performance = ULunarFLPerformance;
 	using Console = ULunarFLConsole;
+	using Transform = ULunarFLTransform;
 }
