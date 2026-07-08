@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesChrono.generated.h"
 
+/**
+ * @file LunarTypesChrono.h
+ * @brief Time shared types
+ * @ingroup LunarTypesChrono
+ */

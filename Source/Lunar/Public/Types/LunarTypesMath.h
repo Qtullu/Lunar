@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesMath.generated.h"
 
+/**
+ * @file LunarTypesMath.h
+ * @brief Math shared types
+ * @ingroup LunarTypesMath
+ */

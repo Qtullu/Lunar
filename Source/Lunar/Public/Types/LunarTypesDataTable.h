@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesDataTable.generated.h"
 
+/**
+ * @file LunarTypesDataTable.h
+ * @brief Data table shared types
+ * @ingroup LunarTypesDataTable
+ */

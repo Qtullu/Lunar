@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesString.generated.h"
 
+/**
+ * @file LunarTypesString.h
+ * @brief String shared types
+ * @ingroup LunarTypesString
+ */

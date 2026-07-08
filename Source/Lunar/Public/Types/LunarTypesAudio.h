@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesAudio.generated.h"
 
+/**
+ * @file LunarTypesAudio.h
+ * @brief Audio shared types
+ * @ingroup LunarTypesAudio
+ */

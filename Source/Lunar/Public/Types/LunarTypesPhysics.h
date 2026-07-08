@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesPhysics.generated.h"
 
+/**
+ * @file LunarTypesPhysics.h
+ * @brief Physics shared types
+ * @ingroup LunarTypesPhysics
+ */

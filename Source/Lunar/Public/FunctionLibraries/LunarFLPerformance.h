@@ -18,13 +18,14 @@
  * @ingroup LunarFLPerformance
  */
 
- /**
-  * @brief Blueprint utility functions for performance
-  * @ingroup LunarFLPerformance
-  */
+
 struct FTextureMemoryStats;
 class UWidget;
 
+/**
+ * @brief Blueprint utility functions for performance
+ * @ingroup LunarFLPerformance
+ */
 UCLASS()
 class LUNAR_API ULunarFLPerformance : public UBlueprintFunctionLibrary
 {

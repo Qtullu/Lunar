@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesDebug.generated.h"
 
+/**
+ * @file LunarTypesDebug.h
+ * @brief Debug shared types
+ * @ingroup LunarTypesDebug
+ */

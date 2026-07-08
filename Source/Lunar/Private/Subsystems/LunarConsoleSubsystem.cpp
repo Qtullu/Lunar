@@ -227,22 +227,37 @@ TArray<FLunarConsoleCommandDefinition> ULunarConsoleSubsystem::GetCommandSuggest
 		CommandPart.TrimStartAndEndInline();
 	}
 
-	TArray<FLunarConsoleCommandDefinition> Result;
+	TArray<FLunarConsoleCommandDefinition> CommandMatches;
+	TArray<FLunarConsoleCommandDefinition> PrefixMatches;
 
 	for (const TPair<FName, FLunarConsoleCommandDefinition>& Pair : CommandsByName)
 	{
-		const FString CommandString = Pair.Key.ToString();
+		const FString FullCommandString = Pair.Key.ToString();
 
-		if (CommandPart.IsEmpty() || CommandString.StartsWith(CommandPart, ESearchCase::IgnoreCase))
+		FString PrefixString;
+		FString RawCommandString = FullCommandString;
+
+		FullCommandString.Split(TEXT("."), &PrefixString, &RawCommandString, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+
+		if (CommandPart.IsEmpty() || RawCommandString.StartsWith(CommandPart, ESearchCase::IgnoreCase))
 		{
-			Result.Add(Pair.Value);
+			CommandMatches.Add(Pair.Value);
+			continue;
+		}
+
+		if (FullCommandString.StartsWith(CommandPart, ESearchCase::IgnoreCase))
+		{
+			PrefixMatches.Add(Pair.Value);
 		}
 	}
 
-	Result.Sort([](const FLunarConsoleCommandDefinition& A, const FLunarConsoleCommandDefinition& B)
-		{
-			return A.Command.LexicalLess(B.Command);
-		});
+	CommandMatches.Sort([](const FLunarConsoleCommandDefinition& A, const FLunarConsoleCommandDefinition& B) { return A.Command.LexicalLess(B.Command); });
+	PrefixMatches.Sort([](const FLunarConsoleCommandDefinition& A, const FLunarConsoleCommandDefinition& B) { return A.Command.LexicalLess(B.Command); });
+
+	TArray<FLunarConsoleCommandDefinition> Result;
+	Result.Reserve(CommandMatches.Num() + PrefixMatches.Num());
+	Result.Append(CommandMatches);
+	Result.Append(PrefixMatches);
 
 	return Result;
 }
@@ -413,6 +428,34 @@ bool ULunarConsoleSubsystem::CanUseConsole() const
 #else
 	return true;
 #endif
+}
+
+TArray<FLunarConsoleMessage> ULunarConsoleSubsystem::FindMessages(const FString& SearchText, const TArray<ELunarConsoleMessageVerbosity>& Verbosities) const
+{
+	FString CleanSearchText = SearchText;
+	CleanSearchText.TrimStartAndEndInline();
+
+	const bool bUseTextFilter = !CleanSearchText.IsEmpty();
+	const bool bUseVerbosityFilter = Verbosities.Num() > 0;
+
+	TArray<FLunarConsoleMessage> Result;
+
+	for (const FLunarConsoleMessage& Message : Messages)
+	{
+		if (bUseVerbosityFilter && !Verbosities.Contains(Message.Verbosity))
+		{
+			continue;
+		}
+
+		if (bUseTextFilter && !Message.Text.Contains(CleanSearchText, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+
+		Result.Add(Message);
+	}
+
+	return Result;
 }
 
 const FLunarConsoleSettings& ULunarConsoleSubsystem::GetConsoleSettings() const

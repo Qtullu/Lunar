@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesRandom.generated.h"
 
+/**
+ * @file LunarTypesRandom.h
+ * @brief Random shared types
+ * @ingroup LunarTypesRandom
+ */

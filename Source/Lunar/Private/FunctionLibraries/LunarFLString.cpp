@@ -18,3 +18,13 @@ FString ULunarFLString::FormatPercent01(float Value01, int32 FractionalDigits)
 {
 	return FormatPercent(Value01 * 100.0f, FractionalDigits);
 }
+
+bool ULunarFLString::IsNotEmpty(const FString& String)
+{
+	return !String.IsEmpty();
+}
+
+bool ULunarFLString::IsNotBlank(const FString& String)
+{
+	return !String.TrimStartAndEnd().IsEmpty();
+}

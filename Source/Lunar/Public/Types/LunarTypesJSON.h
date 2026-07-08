@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesJSON.generated.h"
 
+/**
+ * @file LunarTypesJSON.h
+ * @brief JSON shared types
+ * @ingroup LunarTypesJSON
+ */

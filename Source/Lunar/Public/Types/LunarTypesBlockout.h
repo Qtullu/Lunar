@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesBlockout.generated.h"
 
+/**
+ * @file LunarTypesBlockout.h
+ * @brief Blockout shared types
+ * @ingroup LunarTypesBlockout
+ */

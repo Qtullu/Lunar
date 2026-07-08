@@ -169,6 +169,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Console")
 	bool CanUseConsole() const;
 
+	/**
+	 * @brief Finds stored Lunar console messages by text and verbosity
+	 * @param SearchText Text searched in raw and formatted messages
+	 * @param Verbosities Verbosity filters
+	 * @return Messages matching text and verbosity filters
+	 */
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Console", meta = (DisplayName = "Find Messages"))
+	TArray<FLunarConsoleMessage> FindMessages(const FString& SearchText, const TArray<ELunarConsoleMessageVerbosity>& Verbosities) const;
+
 public:
 	/** Console message added event */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|Subsystems|Console")

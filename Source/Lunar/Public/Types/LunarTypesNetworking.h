@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesNetworking.generated.h"
 
+/**
+ * @file LunarTypesNetworking.h
+ * @brief Networking shared types
+ * @ingroup LunarTypesNetworking
+ */
