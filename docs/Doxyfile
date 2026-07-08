@@ -333,6 +333,7 @@ LAYOUT_FILE            =
 ALIASES                =
 TAB_SIZE               = 4
 INDENTING              = YES
+HTML_FAVICON           = docs/assets/favicon.png
 
 #---------------------------------------------------------------------------
 # Misc
