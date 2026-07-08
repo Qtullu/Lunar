@@ -466,35 +466,7 @@ const FLunarConsoleSettings& ULunarConsoleSubsystem::GetConsoleSettings() const
 
 FLinearColor ULunarConsoleSubsystem::GetColorForVerbosity(ELunarConsoleMessageVerbosity Verbosity) const
 {
-	const FLunarConsoleSettings& Settings = GetConsoleSettings();
-
-	switch (Verbosity)
-	{
-	case ELunarConsoleMessageVerbosity::Success:
-		return Settings.SuccessColor;
-
-	case ELunarConsoleMessageVerbosity::Info:
-		return Settings.InfoColor;
-
-	case ELunarConsoleMessageVerbosity::Warning:
-		return Settings.WarningColor;
-
-	case ELunarConsoleMessageVerbosity::Error:
-		return Settings.ErrorColor;
-
-	case ELunarConsoleMessageVerbosity::Fatal:
-		return Settings.FatalColor;
-
-	case ELunarConsoleMessageVerbosity::Debug:
-		return Settings.DebugColor;
-
-	case ELunarConsoleMessageVerbosity::Trace:
-		return Settings.TraceColor;
-
-	case ELunarConsoleMessageVerbosity::Message:
-	default:
-		return Settings.MessageColor;
-	}
+	return ULunarSettings::GetVerbosityColor(Verbosity);
 }
 
 FString ULunarConsoleSubsystem::BuildFormattedText(const FLunarConsoleMessage& Message) const
