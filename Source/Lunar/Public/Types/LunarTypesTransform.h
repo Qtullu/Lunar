@@ -5,6 +5,16 @@
 #include "CoreMinimal.h"
 #include "LunarTypesTransform.generated.h"
 
+/**
+ * @file LunarTypesTransform.h
+ * @brief Transform shared types
+ * @ingroup LunarTypesTransform
+ */
+
+ /**
+  * @brief Selects a single transform axis
+  * @ingroup LunarTypesTransform
+  */
 UENUM(BlueprintType)
 enum class ELunarAxisShort : uint8
 {
@@ -13,6 +23,10 @@ enum class ELunarAxisShort : uint8
 	Z UMETA(DisplayName = "Z")
 };
 
+/**
+ * @brief Selects one or more transform axes
+ * @ingroup LunarTypesTransform
+ */
 UENUM(BlueprintType)
 enum class ELunarAxisFull : uint8
 {
@@ -27,6 +41,10 @@ enum class ELunarAxisFull : uint8
 	XYZ UMETA(DisplayName = "XYZ")
 };
 
+/**
+ * @brief Selects transform data type
+ * @ingroup LunarTypesTransform
+ */
 UENUM(BlueprintType)
 enum class ELunarLocationRotationScale : uint8
 {

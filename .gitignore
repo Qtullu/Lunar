@@ -1,22 +1,52 @@
-# Visual Studio
+# Visual Studio user files
 .vs/
-.vscode/
-.idea/
-*.sln
-*.slnx
+*.user
 *.suo
+*.userosscache
+*.sln.docstates
+
+# Rider and JetBrains user files
+.idea/
+*.sln.iml
+
+# VS Code user files
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Unreal generated plugin folders
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+
+# Unreal logs and crash data
+*.log
+*.dmp
+*.dump
+*.tmp
+*.temp
+
+# Unreal build artifacts
+*.target
+*.modules
+*.version
+*.receipt
+*.ubtmanifest
+
+# Unreal generated IDE files
+*.VC.db
+*.VC.VC.opendb
 *.opensdf
 *.sdf
-*.VC.db
-*.VC.opendb
-*.VC.opendb-shm
-*.VC.opendb-wal
-*.user
-*.userosscache
-*.rsuser
-.vsconfig
+*.sln
+*.sln.DotSettings.user
+*.xcodeproj
+*.xcworkspace
 
-# Compiled object files
+# C++ compiled object files
 *.slo
 *.lo
 *.o
@@ -25,66 +55,64 @@
 # Precompiled headers
 *.gch
 *.pch
-*.pchi
+
+# Compiled libraries
+*.lib
+*.a
+*.la
+*.lai
 
 # Compiled dynamic libraries
-*.so
-*.dylib
 *.dll
-
-# Fortran module files
-*.mod
-
-# Compiled static libraries
-*.lai
-*.la
-*.a
-*.lib
+*.dylib
+*.so
 
 # Executables
 *.exe
 *.out
 *.app
-*.ipa
 
-# Unreal generated folders
-Binaries/
-Build/
-DerivedDataCache/
-Intermediate/
-Saved/
+# Debug symbols
+*.pdb
+*.idb
+*.ilk
+*.map
+*.exp
 
-# Unreal plugin generated folders
-Plugins/**/Binaries/
-Plugins/**/Build/
-Plugins/**/DerivedDataCache/
-Plugins/**/Intermediate/
-Plugins/**/Saved/
+# Build system cache
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+compile_commands.json
 
-# Whitelist PakBlacklist files
-!Build/
-!Build/*/
-Build/*/**
-!Build/*/PakBlacklist*.txt
-
-# Do not ignore icon files in Build
-!Build/**/*.ico
-
-# Built data for maps
-*_BuiltData.uasset
-
-# Precompiled assets
-SourceArt/**/*.png
-SourceArt/**/*.tga
-
-# Logs and crash data
-*.log
-*.dmp
-*.tmp
-
-# OS files
+# Windows system files
 Thumbs.db
-.DS_Store
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Doxygen generated docs
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux system files
+*~
+.directory
+.Trash-*
+
+# Doxygen generated output
+docs/html/
+docs/xml/
+docs/latex/
 docs/build/
+docs/doxygen-warnings.txt
+docs/doxygen-log.txt
+
+# Keep Doxygen source files
+!docs/Doxyfile
+!docs/mainpage.md
+!docs/groups.dox
+!docs/lunar-custom.css
+!docs/doxygen-awesome-css/
+!docs/doxygen-awesome-css/**

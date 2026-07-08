@@ -7,8 +7,14 @@
 #include "LunarFLAudio.generated.h"
 
 /**
- * 
+ * @file LunarFLAudio.h
+ * @brief Audio helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for audio
+  * @ingroup LunarFLAudio
+  */
 UCLASS()
 class LUNAR_API ULunarFLAudio : public UBlueprintFunctionLibrary
 {

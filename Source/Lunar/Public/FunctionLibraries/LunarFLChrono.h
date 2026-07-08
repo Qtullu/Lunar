@@ -7,8 +7,14 @@
 #include "LunarFLChrono.generated.h"
 
 /**
- * 
+ * @file LunarFLChrono.h
+ * @brief Time helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for time
+  * @ingroup LunarFLChrono
+  */
 UCLASS()
 class LUNAR_API ULunarFLChrono : public UBlueprintFunctionLibrary
 {

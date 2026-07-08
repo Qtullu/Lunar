@@ -21,3 +21,9 @@
 #include "LunarTypesPerformance.h"
 #include "LunarRawInputTypes.h"
 #include "LunarTypesTransform.h"
+
+/**
+ * @file LunarTypes.h
+ * @brief Aggregate header for Lunar shared types
+ * @ingroup LunarTypesAggregate
+ */

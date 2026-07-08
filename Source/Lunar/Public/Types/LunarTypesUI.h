@@ -5,3 +5,8 @@
 #include "CoreMinimal.h"
 #include "LunarTypesUI.generated.h"
 
+/**
+ * @file LunarTypesUI.h
+ * @brief User interface shared types
+ * @ingroup LunarTypesUI
+ */

@@ -7,8 +7,14 @@
 #include "LunarFLBlockout.generated.h"
 
 /**
- * 
+ * @file LunarFLBlockout.h
+ * @brief Blockout helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for blockout
+  * @ingroup LunarFLBlockout
+  */
 UCLASS()
 class LUNAR_API ULunarFLBlockout : public UBlueprintFunctionLibrary
 {

@@ -1,0 +1,281 @@
+/**
+ * @file groups.dox
+ * @brief Doxygen group definitions for Lunar Plugin
+ */
+
+/**
+ * @defgroup LunarFunctionLibraries Function Libraries
+ * @brief Blueprint function libraries
+ */
+
+/**
+ * @defgroup LunarSubsystems Subsystems
+ * @brief Runtime subsystems
+ */
+
+/**
+ * @defgroup LunarSettings Settings
+ * @brief Plugin settings
+ */
+
+/**
+ * @defgroup LunarTypes Types
+ * @brief Shared enums structs and data types
+ */
+
+/**
+ * @defgroup LunarWidgets Widgets
+ * @brief Runtime widgets
+ */
+
+/**
+ * @defgroup LunarFLGame Game
+ * @ingroup LunarFunctionLibraries
+ * @brief Game and platform helper functions
+ */
+
+/**
+ * @defgroup LunarFLNetworking Networking
+ * @ingroup LunarFunctionLibraries
+ * @brief Networking helper functions
+ */
+
+/**
+ * @defgroup LunarFLMath Math
+ * @ingroup LunarFunctionLibraries
+ * @brief Math helper functions
+ */
+
+/**
+ * @defgroup LunarFLRandom Random
+ * @ingroup LunarFunctionLibraries
+ * @brief Random helper functions
+ */
+
+/**
+ * @defgroup LunarFLString String
+ * @ingroup LunarFunctionLibraries
+ * @brief String helper functions
+ */
+
+/**
+ * @defgroup LunarFLChrono Chrono
+ * @ingroup LunarFunctionLibraries
+ * @brief Time helper functions
+ */
+
+/**
+ * @defgroup LunarFLUI UI
+ * @ingroup LunarFunctionLibraries
+ * @brief User interface helper functions
+ */
+
+/**
+ * @defgroup LunarFLDebug Debug
+ * @ingroup LunarFunctionLibraries
+ * @brief Debug helper functions
+ */
+
+/**
+ * @defgroup LunarFLAudio Audio
+ * @ingroup LunarFunctionLibraries
+ * @brief Audio helper functions
+ */
+
+/**
+ * @defgroup LunarFLDataTable Data Table
+ * @ingroup LunarFunctionLibraries
+ * @brief Data table helper functions
+ */
+
+/**
+ * @defgroup LunarFLSave Save
+ * @ingroup LunarFunctionLibraries
+ * @brief Save helper functions
+ */
+
+/**
+ * @defgroup LunarFLPhysics Physics
+ * @ingroup LunarFunctionLibraries
+ * @brief Physics helper functions
+ */
+
+/**
+ * @defgroup LunarFLBlockout Blockout
+ * @ingroup LunarFunctionLibraries
+ * @brief Blockout helper functions
+ */
+
+/**
+ * @defgroup LunarFLJSON JSON
+ * @ingroup LunarFunctionLibraries
+ * @brief JSON helper functions
+ */
+
+/**
+ * @defgroup LunarFLPerformance Performance
+ * @ingroup LunarFunctionLibraries
+ * @brief Performance helper functions
+ */
+
+/**
+ * @defgroup LunarFLConsole Console
+ * @ingroup LunarFunctionLibraries
+ * @brief Console helper functions
+ */
+
+/**
+ * @defgroup LunarFLTransform Transform
+ * @ingroup LunarFunctionLibraries
+ * @brief Transform helper functions
+ */
+
+/**
+ * @defgroup LunarFLFile File
+ * @ingroup LunarFunctionLibraries
+ * @brief File helper functions
+ */
+
+/**
+ * @defgroup LunarConsoleSubsystem Console
+ * @ingroup LunarSubsystems
+ * @brief Console subsystem
+ */
+
+/**
+ * @defgroup LunarPerformanceSubsystem Performance
+ * @ingroup LunarSubsystems
+ * @brief Performance subsystem
+ */
+
+/**
+ * @defgroup LunarRawInputSubsystem Raw Input
+ * @ingroup LunarSubsystems
+ * @brief Raw input subsystem
+ */
+
+/**
+ * @defgroup LunarPluginSettings Plugin Settings
+ * @ingroup LunarSettings
+ * @brief Lunar plugin settings
+ */
+
+/**
+ * @defgroup LunarTypesRawInput Raw Input
+ * @ingroup LunarTypes
+ * @brief Raw input shared types
+ */
+
+/**
+ * @defgroup LunarTypesAggregate Aggregate
+ * @ingroup LunarTypes
+ * @brief Aggregate header for Lunar shared types
+ */
+
+/**
+ * @defgroup LunarTypesAudio Audio
+ * @ingroup LunarTypes
+ * @brief Audio shared types
+ */
+
+/**
+ * @defgroup LunarTypesBlockout Blockout
+ * @ingroup LunarTypes
+ * @brief Blockout shared types
+ */
+
+/**
+ * @defgroup LunarTypesChrono Chrono
+ * @ingroup LunarTypes
+ * @brief Time shared types
+ */
+
+/**
+ * @defgroup LunarTypesConsole Console
+ * @ingroup LunarTypes
+ * @brief Console shared types
+ */
+
+/**
+ * @defgroup LunarTypesDataTable Data Table
+ * @ingroup LunarTypes
+ * @brief Data table shared types
+ */
+
+/**
+ * @defgroup LunarTypesDebug Debug
+ * @ingroup LunarTypes
+ * @brief Debug shared types
+ */
+
+/**
+ * @defgroup LunarTypesGame Game
+ * @ingroup LunarTypes
+ * @brief Game shared types
+ */
+
+/**
+ * @defgroup LunarTypesJSON JSON
+ * @ingroup LunarTypes
+ * @brief JSON shared types
+ */
+
+/**
+ * @defgroup LunarTypesMath Math
+ * @ingroup LunarTypes
+ * @brief Math shared types
+ */
+
+/**
+ * @defgroup LunarTypesNetworking Networking
+ * @ingroup LunarTypes
+ * @brief Networking shared types
+ */
+
+/**
+ * @defgroup LunarTypesPerformance Performance
+ * @ingroup LunarTypes
+ * @brief Performance shared types
+ */
+
+/**
+ * @defgroup LunarTypesPhysics Physics
+ * @ingroup LunarTypes
+ * @brief Physics shared types
+ */
+
+/**
+ * @defgroup LunarTypesRandom Random
+ * @ingroup LunarTypes
+ * @brief Random shared types
+ */
+
+/**
+ * @defgroup LunarTypesSave Save
+ * @ingroup LunarTypes
+ * @brief Save shared types
+ */
+
+/**
+ * @defgroup LunarTypesString String
+ * @ingroup LunarTypes
+ * @brief String shared types
+ */
+
+/**
+ * @defgroup LunarTypesTransform Transform
+ * @ingroup LunarTypes
+ * @brief Transform shared types
+ */
+
+/**
+ * @defgroup LunarTypesUI UI
+ * @ingroup LunarTypes
+ * @brief User interface shared types
+ */
+
+/**
+ * @defgroup LunarDraggableWindow Draggable Window
+ * @ingroup LunarWidgets
+ * @brief Draggable and resizable window widget
+ */

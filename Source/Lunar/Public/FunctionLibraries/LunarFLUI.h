@@ -7,8 +7,14 @@
 #include "LunarFLUI.generated.h"
 
 /**
- * 
+ * @file LunarFLUI.h
+ * @brief User interface helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for user interface
+  * @ingroup LunarFLUI
+  */
 UCLASS()
 class LUNAR_API ULunarFLUI : public UBlueprintFunctionLibrary
 {

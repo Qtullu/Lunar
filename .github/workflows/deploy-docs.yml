@@ -1,0 +1,88 @@
+name: Deploy Doxygen Documentation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "Source/**"
+      - "docs/Doxyfile"
+      - "docs/mainpage.md"
+      - "docs/groups.dox"
+      - "docs/lunar-custom.css"
+      - "docs/doxygen-awesome-css/**"
+      - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Doxygen Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Doxygen and Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Print tool versions
+        run: |
+          doxygen --version
+          dot -V
+
+      - name: Prepare Doxyfile for GitHub Actions
+        run: |
+          sed -i 's|^DOT_PATH.*|DOT_PATH               =|' docs/Doxyfile
+          sed -i "s|^STRIP_FROM_PATH.*|STRIP_FROM_PATH        = ${GITHUB_WORKSPACE}|" docs/Doxyfile
+          sed -i "s|^STRIP_FROM_INC_PATH.*|STRIP_FROM_INC_PATH    = ${GITHUB_WORKSPACE}/Source|" docs/Doxyfile
+
+      - name: Clean previous generated documentation
+        run: |
+          rm -rf docs/build
+          rm -rf docs/html
+          rm -rf docs/xml
+          rm -rf docs/latex
+          rm -f docs/doxygen-warnings.txt
+          rm -f docs/doxygen-log.txt
+
+      - name: Generate documentation
+        run: doxygen docs/Doxyfile
+
+      - name: Verify generated documentation
+        run: |
+          test -f docs/build/html/index.html
+          touch docs/build/html/.nojekyll
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build/html
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

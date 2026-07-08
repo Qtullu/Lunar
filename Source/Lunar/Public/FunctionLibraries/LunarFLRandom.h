@@ -7,8 +7,14 @@
 #include "LunarFLRandom.generated.h"
 
 /**
- * 
+ * @file LunarFLRandom.h
+ * @brief Random helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for random values
+  * @ingroup LunarFLRandom
+  */
 UCLASS()
 class LUNAR_API ULunarFLRandom : public UBlueprintFunctionLibrary
 {

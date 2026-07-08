@@ -7,8 +7,14 @@
 #include "LunarFLDebug.generated.h"
 
 /**
- * 
+ * @file LunarFLDebug.h
+ * @brief Debug helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for debug
+  * @ingroup LunarFLDebug
+  */
 UCLASS()
 class LUNAR_API ULunarFLDebug : public UBlueprintFunctionLibrary
 {

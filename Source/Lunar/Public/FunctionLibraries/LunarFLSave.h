@@ -7,8 +7,14 @@
 #include "LunarFLSave.generated.h"
 
 /**
- * 
+ * @file LunarFLSave.h
+ * @brief Save helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for saves
+  * @ingroup LunarFLSave
+  */
 UCLASS()
 class LUNAR_API ULunarFLSave : public UBlueprintFunctionLibrary
 {

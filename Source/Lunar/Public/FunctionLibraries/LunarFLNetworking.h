@@ -7,8 +7,14 @@
 #include "LunarFLNetworking.generated.h"
 
 /**
- * 
+ * @file LunarFLNetworking.h
+ * @brief Networking helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for networking
+  * @ingroup LunarFLNetworking
+  */
 UCLASS()
 class LUNAR_API ULunarFLNetworking : public UBlueprintFunctionLibrary
 {

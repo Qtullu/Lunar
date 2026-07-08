@@ -7,8 +7,14 @@
 #include "LunarFLString.generated.h"
 
 /**
- * 
+ * @file LunarFLString.h
+ * @brief String helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for strings
+  * @ingroup LunarFLString
+  */
 UCLASS()
 class LUNAR_API ULunarFLString : public UBlueprintFunctionLibrary
 {

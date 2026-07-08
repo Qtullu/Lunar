@@ -1,0 +1,68 @@
+#MSearchBox {
+	margin-top: 10px !important;
+}
+
+#nav-sync,
+#splitbar,
+.splitbar,
+.ui-resizable-handle {
+	display: none !important;
+}
+
+.contents {
+	max-width: 1180px;
+}
+
+.contents p {
+	line-height: 1.7;
+}
+
+.contents h1 {
+	margin-bottom: 28px;
+}
+
+.contents h2 {
+	margin-top: 30px;
+	margin-bottom: 24px;
+}
+
+.contents h3 {
+	margin-top: 26px;
+	margin-bottom: 12px;
+}
+
+.contents ul {
+	margin-top: 14px;
+	margin-bottom: 14px;
+}
+
+div.line {
+	line-height: 1.5;
+}
+
+hr.lunar-section-divider {
+	display: block !important;
+	width: 100% !important;
+	height: 0 !important;
+	border: 0 !important;
+	border-top: 2px solid rgba(255, 255, 255, 0.18) !important;
+	background: none !important;
+	box-shadow: none !important;
+	outline: 0 !important;
+	margin: 56px 0 !important;
+	padding: 0 !important;
+	opacity: 1 !important;
+}
+
+.lunar-code-example {
+	padding: 18px 22px !important;
+	border-radius: 8px !important;
+	margin-top: 18px !important;
+	margin-bottom: 30px !important;
+}
+
+.lunar-code-example .line {
+	white-space: pre !important;
+	font-family: var(--font-family-monospace) !important;
+	line-height: 1.55 !important;
+}

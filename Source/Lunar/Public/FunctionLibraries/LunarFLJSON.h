@@ -7,8 +7,14 @@
 #include "LunarFLJSON.generated.h"
 
 /**
- * 
+ * @file LunarFLJSON.h
+ * @brief JSON helper function library
  */
+
+ /**
+  * @brief Blueprint utility functions for JSON
+  * @ingroup LunarFLJSON
+  */
 UCLASS()
 class LUNAR_API ULunarFLJSON : public UBlueprintFunctionLibrary
 {

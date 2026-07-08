@@ -5,6 +5,16 @@
 #include "CoreMinimal.h"
 #include "LunarTypesGame.generated.h"
 
+/**
+ * @file LunarTypesGame.h
+ * @brief Game shared types
+ * @ingroup LunarTypesGame
+ */
+
+ /**
+  * @brief Defines target runtime platform
+  * @ingroup LunarTypesGame
+  */
 UENUM(BlueprintType)
 enum class ELunarPlatformType : uint8
 {
@@ -22,6 +32,10 @@ enum class ELunarPlatformType : uint8
 	Switch UMETA(DisplayName = "Nintendo Switch")
 };
 
+/**
+ * @brief Defines target runtime platform family
+ * @ingroup LunarTypesGame
+ */
 UENUM(BlueprintType)
 enum class ELunarPlatformFamily : uint8
 {
