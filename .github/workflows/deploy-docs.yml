@@ -13,6 +13,7 @@ on:
       - "docs/lunar-custom.css"
       - "docs/doxygen-awesome-css/**"
       - ".github/workflows/deploy-docs.yml"
+      - "docs/assets/**"
   workflow_dispatch:
 
 permissions:
