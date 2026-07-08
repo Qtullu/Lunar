@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "GeneralProjectSettings.h"
 #include "Misc/App.h"
+#include "HAL/PlatformApplicationMisc.h"
 
 bool ULunarFLGame::IsDebug()
 {
@@ -246,6 +247,18 @@ FString ULunarFLGame::GetProjectDisplayedTitle()
 {
 	const UGeneralProjectSettings* ProjectSettings = GetDefault<UGeneralProjectSettings>();
 	return ProjectSettings ? ProjectSettings->ProjectDisplayedTitle.ToString() : FString();
+}
+
+void ULunarFLGame::CopyStringToClipboard(const FString& Text)
+{
+	FPlatformApplicationMisc::ClipboardCopy(*Text);
+}
+
+FString ULunarFLGame::PasteStringFromClipboard()
+{
+	FString Text;
+	FPlatformApplicationMisc::ClipboardPaste(Text);
+	return Text;
 }
 
 ELunarPlatformType ULunarFLGame::GetPlatformType()

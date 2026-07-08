@@ -21,6 +21,7 @@
 #include "LunarFLPerformance.h"
 #include "LunarFLConsole.h"
 #include "LunarFLTransform.h"
+#include "LunarFLFile.h"
 
 namespace LunarFL
 {
@@ -41,4 +42,5 @@ namespace LunarFL
 	using Performance = ULunarFLPerformance;
 	using Console = ULunarFLConsole;
 	using Transform = ULunarFLTransform;
+	using File = ULunarFLFile;
 }

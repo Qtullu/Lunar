@@ -84,7 +84,13 @@ void ULunarConsoleSubsystem::BP_AddMessage(FGameplayTag Category, ELunarConsoleM
 	Message.FormattedText = BuildFormattedText(Message);
 
 	Messages.Add(Message);
-	TrimMessagesIfNeeded();
+
+	const int32 RemovedCount = TrimMessagesIfNeeded();
+
+	if (RemovedCount > 0)
+	{
+		OnMessagesRemoved.Broadcast(RemovedCount);
+	}
 
 	if (Settings.bPrintToOutputLog)
 	{
@@ -281,15 +287,15 @@ bool ULunarConsoleSubsystem::ExecuteCommandString(const FString& Input, FString&
 
 	UE_LOG(LogTemp, Log, TEXT("LunarConsole: Input='%s', Command='%s', Parameter='%s'"), *Input, *CommandName.ToString(), *ParameterString);
 
+	AddMessage(GetDefaultConsoleCategoryTag(), ELunarConsoleMessageVerbosity::Info, FString::Printf(TEXT("> %s"), *Input));
+
 	const FLunarConsoleCommandDefinition* Command = CommandsByName.Find(CommandName);
 
 	if (!Command)
 	{
 		OutError = FString::Printf(TEXT("Unknown command: %s. Loaded commands: %d"), *CommandName.ToString(), CommandsByName.Num());
 		UE_LOG(LogTemp, Error, TEXT("LunarConsole: %s"), *OutError);
-
 		AddMessage(GetDefaultConsoleCategoryTag(), ELunarConsoleMessageVerbosity::Error, OutError);
-
 		return false;
 	}
 
@@ -297,7 +303,6 @@ bool ULunarConsoleSubsystem::ExecuteCommandString(const FString& Input, FString&
 
 	if (bResult)
 	{
-		AddMessage(GetDefaultConsoleCategoryTag(), ELunarConsoleMessageVerbosity::Success, FString::Printf(TEXT("> %s"), *Input));
 		UE_LOG(LogTemp, Log, TEXT("LunarConsole: Execute success: %s"), *Input);
 	}
 	else
@@ -468,17 +473,24 @@ FString ULunarConsoleSubsystem::BuildFormattedText(const FLunarConsoleMessage& M
 	return Prefix + Message.Text;
 }
 
-void ULunarConsoleSubsystem::TrimMessagesIfNeeded()
+int32 ULunarConsoleSubsystem::TrimMessagesIfNeeded()
 {
-	const int32 MaxMessages = FMath::Max(1, GetConsoleSettings().MaxMessages);
+	const FLunarConsoleSettings& ConsoleSettings = GetConsoleSettings();
 
-	if (Messages.Num() <= MaxMessages)
+	if (ConsoleSettings.MaxMessages <= 0)
 	{
-		return;
+		return 0;
 	}
 
-	const int32 RemoveCount = Messages.Num() - MaxMessages;
-	Messages.RemoveAt(0, RemoveCount, EAllowShrinking::No);
+	const int32 RemovedCount = Messages.Num() - ConsoleSettings.MaxMessages;
+
+	if (RemovedCount <= 0)
+	{
+		return 0;
+	}
+
+	Messages.RemoveAt(0, RemovedCount, EAllowShrinking::No);
+	return RemovedCount;
 }
 
 bool ULunarConsoleSubsystem::ParseInput(const FString& Input, FName& OutCommand, FString& OutParameter) const

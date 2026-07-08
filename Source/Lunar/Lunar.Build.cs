@@ -58,6 +58,7 @@ public class Lunar : ModuleRules
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             PublicSystemLibraries.Add("pdh.lib");
+            PublicSystemLibraries.AddRange(new string[] { "Ole32.lib", "Shell32.lib" });
         }
     }
 }

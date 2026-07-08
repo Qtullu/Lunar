@@ -13,6 +13,7 @@ class APlayerController;
 class UUserWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarConsoleMessageAddedSignature, const FLunarConsoleMessage&, Message);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarConsoleMessagesRemovedSignature, int32, RemovedCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarConsoleMessagesClearedSignature);
 
 UCLASS()
@@ -77,7 +78,11 @@ public:
 	FLunarConsoleMessageAddedSignature OnMessageAdded;
 
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|Subsystems|Console")
+	FLunarConsoleMessagesRemovedSignature OnMessagesRemoved;
+
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|Subsystems|Console")
 	FLunarConsoleMessagesClearedSignature OnMessagesCleared;
+
 
 private:
 	UPROPERTY()
@@ -97,7 +102,7 @@ private:
 
 	FLinearColor GetColorForVerbosity(ELunarConsoleMessageVerbosity Verbosity) const;
 	FString BuildFormattedText(const FLunarConsoleMessage& Message) const;
-	void TrimMessagesIfNeeded();
+	int32 TrimMessagesIfNeeded();
 
 	bool ParseInput(const FString& Input, FName& OutCommand, FString& OutParameter) const;
 	bool ExecuteCommand(const FLunarConsoleCommandDefinition& Command, const FString& ParameterString, FString& OutError);

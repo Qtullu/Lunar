@@ -101,4 +101,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Lunar|Game|Project")
 	static FString GetProjectDisplayedTitle();
+
+	//Platform utilities
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Game|Clipboard", meta = (DisplayName = "Copy String To Clipboard"))
+	static void CopyStringToClipboard(const FString& Text);
+
+	UFUNCTION(BlueprintPure, Category = "Lunar|Game|Clipboard", meta = (DisplayName = "Paste String From Clipboard"))
+	static FString PasteStringFromClipboard();
 };

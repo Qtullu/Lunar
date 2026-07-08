@@ -37,4 +37,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Lunar|Console", meta = (WorldContext = "WorldContextObject"))
 	static TArray<FString> GetConsoleCommandSuggestionStrings(const UObject* WorldContextObject, const FString& Input);
+
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Console", meta = (WorldContext = "WorldContextObject", DisplayName = "Save Console Log To Text File"))
+	static bool SaveConsoleLogToTextFile(const UObject* WorldContextObject, FString& OutSavedFilePath, FString& OutError);
 };

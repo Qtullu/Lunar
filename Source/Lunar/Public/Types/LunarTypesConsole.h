@@ -164,7 +164,7 @@ public:
 	bool bEnabledInShipping = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Messages", meta = (ClampMin = "1"))
-	int32 MaxMessages = 1000;
+	int32 MaxMessages = 10000;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|Console|Commands")
 	TArray<FLunarConsoleCommandTable> CommandTables;
