@@ -16,7 +16,7 @@ Full generated documentation is available here:
 
 
 
-\*\*https://qtullu.github.io/Lunar/\*\*
+\*\*\[Online Documentation](https://qtullu.github.io/Lunar/)\*\*
 
 
 
