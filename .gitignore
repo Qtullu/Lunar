@@ -85,3 +85,6 @@ SourceArt/**/*.tga
 # OS files
 Thumbs.db
 .DS_Store
+
+# Doxygen generated docs
+docs/build/
