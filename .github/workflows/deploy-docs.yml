@@ -11,9 +11,9 @@ on:
       - "docs/mainpage.md"
       - "docs/groups.dox"
       - "docs/lunar-custom.css"
+      - "docs/assets/**"
       - "docs/doxygen-awesome-css/**"
       - ".github/workflows/deploy-docs.yml"
-      - "docs/assets/**"
   workflow_dispatch:
 
 permissions:
@@ -49,11 +49,12 @@ jobs:
           doxygen --version
           dot -V
 
-      - name: Verify Doxygen assets
+      - name: Verify documentation assets
         run: |
           test -f docs/doxygen-awesome-css/doxygen-awesome.css
           test -f docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css
           test -f docs/lunar-custom.css
+          test -f docs/assets/favicon.png
 
       - name: Prepare Doxyfile for GitHub Actions
         run: |
@@ -70,23 +71,58 @@ jobs:
           rm -rf docs/html
           rm -rf docs/xml
           rm -rf docs/latex
+          rm -rf docs/site
           rm -f docs/doxygen-warnings.txt
           rm -f docs/doxygen-log.txt
 
       - name: Generate documentation
         run: doxygen docs/Doxyfile
 
-      - name: Print generated index files
+      - name: Detect generated HTML directory
         run: |
-          find docs -name index.html -print
+          echo "Generated index files:"
+          find . -name index.html -print
 
-      - name: Verify generated documentation
+          HTML_DIR=""
+
+          if [ -f "docs/build/html/index.html" ]; then
+            HTML_DIR="docs/build/html"
+          elif [ -f "docs/html/index.html" ]; then
+            HTML_DIR="docs/html"
+          elif [ -f "build/html/index.html" ]; then
+            HTML_DIR="build/html"
+          elif [ -f "html/index.html" ]; then
+            HTML_DIR="html"
+          fi
+
+          if [ -z "$HTML_DIR" ]; then
+            echo "No generated Doxygen index.html found"
+            exit 1
+          fi
+
+          echo "HTML_DIR=$HTML_DIR" >> "$GITHUB_ENV"
+          echo "Using generated HTML directory: $HTML_DIR"
+
+      - name: Prepare GitHub Pages directory
         run: |
-          test -f docs/build/html/index.html
-          test -f docs/build/html/doxygen-awesome.css
-          test -f docs/build/html/doxygen-awesome-sidebar-only.css
-          test -f docs/build/html/lunar-custom.css
-          touch docs/build/html/.nojekyll
+          rm -rf docs/site
+          mkdir -p docs/site
+          cp -a "$HTML_DIR"/. docs/site/
+          cp docs/assets/favicon.png docs/site/favicon.png
+          touch docs/site/.nojekyll
+
+      - name: Patch favicon link
+        run: |
+          find docs/site -maxdepth 1 -name "*.html" -print0 | xargs -0 perl -0pi -e 's#</head>#<link rel="icon" type="image/png" href="favicon.png">\n</head>#i unless /rel=["'\''](?:shortcut )?icon["'\'']/i'
+
+      - name: Verify GitHub Pages directory
+        run: |
+          test -f docs/site/index.html
+          test -f docs/site/doxygen-awesome.css
+          test -f docs/site/doxygen-awesome-sidebar-only.css
+          test -f docs/site/lunar-custom.css
+          test -f docs/site/favicon.png
+          ls -la docs/site | head -50
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -94,7 +130,7 @@ jobs:
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/build/html
+          path: docs/site
 
   deploy:
     name: Deploy to GitHub Pages

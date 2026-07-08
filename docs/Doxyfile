@@ -42,6 +42,7 @@ EXCLUDE_PATTERNS       = */Binaries/* \
                          */.git/* \
                          */.vs/* \
                          */docs/html/* \
+                         */docs/build/* \
                          */docs/latex/* \
                          */docs/xml/* \
                          */docs/doxygen-awesome-css/*
@@ -243,6 +244,7 @@ HTML_FILE_EXTENSION    = .html
 HTML_HEADER            =
 HTML_FOOTER            =
 HTML_STYLESHEET        =
+HTML_FAVICON           = docs/assets/favicon.png
 
 HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome-css/doxygen-awesome.css \
                          docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css \
@@ -333,7 +335,6 @@ LAYOUT_FILE            =
 ALIASES                =
 TAB_SIZE               = 4
 INDENTING              = YES
-HTML_FAVICON           = docs/assets/favicon.png
 
 #---------------------------------------------------------------------------
 # Misc
