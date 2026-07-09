@@ -36,7 +36,9 @@ public class Lunar : ModuleRules
                 "UMG",
                 "Slate",
                 "SlateCore",
-                "GameplayTags"
+                "GameplayTags",
+                "Json",
+                "JsonUtilities"
             }
         );
 

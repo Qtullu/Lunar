@@ -7,7 +7,7 @@
 #include "LunarTypesGame.h"
 //#include "LunarTypesNetworking.h"
 //#include "LunarTypesMath.h"
-//#include "LunarTypesRandom.h"
+#include "LunarTypesRandom.h"
 //#include "LunarTypesString.h"
 //#include "LunarTypesChrono.h"
 //#include "LunarTypesUI.h"
