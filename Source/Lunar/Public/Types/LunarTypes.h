@@ -12,7 +12,7 @@
 //#include "LunarTypesChrono.h"
 //#include "LunarTypesUI.h"
 //#include "LunarTypesDebug.h"
-//#include "LunarTypesAudio.h"
+#include "LunarTypesAudio.h"
 //#include "LunarTypesDataTable.h"
 //#include "LunarTypesSave.h"
 //#include "LunarTypesPhysics.h"

@@ -539,46 +539,26 @@ bool ULunarPerformanceSubsystem::CanUsePerformanceWidgetHotkey() const
 
 bool ULunarPerformanceSubsystem::TryGetNextDetailLevel(ELunarPerformanceSummaryDetail CurrentDetailLevel, ELunarPerformanceSummaryDetail& OutNextDetailLevel) const
 {
-	const UEnum* DetailEnum = StaticEnum<ELunarPerformanceSummaryDetail>();
-
-	if (!DetailEnum)
+	switch (CurrentDetailLevel)
 	{
+	case ELunarPerformanceSummaryDetail::Low:
+		OutNextDetailLevel = ELunarPerformanceSummaryDetail::Normal;
+		return true;
+
+	case ELunarPerformanceSummaryDetail::Normal:
+		OutNextDetailLevel = ELunarPerformanceSummaryDetail::High;
+		return true;
+
+	case ELunarPerformanceSummaryDetail::High:
+		OutNextDetailLevel = ELunarPerformanceSummaryDetail::Full;
+		return true;
+
+	case ELunarPerformanceSummaryDetail::Full:
+		return false;
+
+	default:
 		return false;
 	}
-
-	const int64 CurrentValue = static_cast<int64>(CurrentDetailLevel);
-
-	bool bFoundCurrent = false;
-
-	for (int32 Index = 0; Index < DetailEnum->NumEnums(); ++Index)
-	{
-		if (DetailEnum->HasMetaData(TEXT("Hidden"), Index))
-		{
-			continue;
-		}
-
-		const FString EnumName = DetailEnum->GetNameStringByIndex(Index);
-
-		if (EnumName.EndsWith(TEXT("MAX")) || EnumName.EndsWith(TEXT("Max")))
-		{
-			continue;
-		}
-
-		const int64 EnumValue = DetailEnum->GetValueByIndex(Index);
-
-		if (bFoundCurrent)
-		{
-			OutNextDetailLevel = static_cast<ELunarPerformanceSummaryDetail>(EnumValue);
-			return true;
-		}
-
-		if (EnumValue == CurrentValue)
-		{
-			bFoundCurrent = true;
-		}
-	}
-
-	return false;
 }
 
 void ULunarPerformanceSubsystem::AddSnapshotToHistory(const FLunarPerformanceSnapshot& Snapshot)

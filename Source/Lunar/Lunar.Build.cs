@@ -47,7 +47,9 @@ public class Lunar : ModuleRules
             {
                 "Slate",
                 "SlateCore",
-                "ApplicationCore"
+                "ApplicationCore",
+                "AudioSynesthesia",
+                "AudioAnalyzer"
             }
         );
 

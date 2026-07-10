@@ -6,10 +6,11 @@
 	"Description": "Lunar is a lightweight Unreal Engine plugin with reusable default content, utilities, templates, and helper tools designed to speed up project setup and everyday development.",
 	"Category": "Other",
 	"CreatedBy": "Edgar Frolenkov",
-	"CreatedByURL": "",
-	"DocsURL": "",
-	"MarketplaceURL": "",
-	"SupportURL": "",
+	"CreatedByURL": "https://github.com/Qtullu",
+	"DocsURL": "https://qtullu.github.io/Lunar/",
+	"MarketplaceURL": "https://github.com/Qtullu/Lunar",
+	"SupportURL": "https://github.com/Qtullu/Lunar/issues",
+	"EngineVersion": "5.8.0",
 	"CanContainContent": true,
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
@@ -19,6 +20,12 @@
 			"Name": "Lunar",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "AudioSynesthesia",
+			"Enabled": true
 		}
 	],
 	"Sealed": true
