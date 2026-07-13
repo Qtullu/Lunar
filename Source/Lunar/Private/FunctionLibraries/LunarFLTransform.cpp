@@ -4,6 +4,7 @@
 
 #include "Components/SceneComponent.h"
 #include "Engine/HitResult.h"
+#include "FunctionLibraries/LunarFLRandom.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "NativeGameplayTags.h"
@@ -303,6 +304,57 @@ bool ULunarFLTransform::SetRotationAxis(UObject* ActorOrComponent, ELunarAxisFul
 	}
 
 	return true;
+}
+
+bool ULunarFLTransform::SetRandomRotationAxis(UObject* ActorOrComponent, ELunarAxisFull Axis, FVector Min, FVector Max, ELunarRandomQuality Quality, bool bRelative)
+{
+	using namespace LunarFLTransform_Private;
+
+	AActor* Actor = nullptr;
+	USceneComponent* Component = nullptr;
+
+	if (!ResolveActorOrComponent(ActorOrComponent, bRelative, Actor, Component, TEXT("SetRandomRotationAxis")))
+	{
+		return false;
+	}
+
+	const FVector Values = ULunarFLRandom::GetRandomVectorInRange(ActorOrComponent, Min, Max, Quality);
+	FHitResult SweepHitResult;
+	return SetRotationAxis(ActorOrComponent, Axis, Values, SweepHitResult, bRelative, false, false);
+}
+
+bool ULunarFLTransform::SetRandomRotationAxisFromSeed(UObject* ActorOrComponent, ELunarAxisFull Axis, int64 Seed, FVector Min, FVector Max, ELunarRandomQuality Quality, bool bRelative)
+{
+	using namespace LunarFLTransform_Private;
+
+	AActor* Actor = nullptr;
+	USceneComponent* Component = nullptr;
+
+	if (!ResolveActorOrComponent(ActorOrComponent, bRelative, Actor, Component, TEXT("SetRandomRotationAxisFromSeed")))
+	{
+		return false;
+	}
+
+	const FVector Values = ULunarFLRandom::GetRandomVectorInRangeFromSeed(ActorOrComponent, Min, Max, Seed, Quality);
+	FHitResult SweepHitResult;
+	return SetRotationAxis(ActorOrComponent, Axis, Values, SweepHitResult, bRelative, false, false);
+}
+
+bool ULunarFLTransform::SetRandomRotationAxisFromStream(UObject* ActorOrComponent, ELunarAxisFull Axis, FLunarRandomStream& Stream, FVector Min, FVector Max, bool bRelative)
+{
+	using namespace LunarFLTransform_Private;
+
+	AActor* Actor = nullptr;
+	USceneComponent* Component = nullptr;
+
+	if (!ResolveActorOrComponent(ActorOrComponent, bRelative, Actor, Component, TEXT("SetRandomRotationAxisFromStream")))
+	{
+		return false;
+	}
+
+	const FVector Values = ULunarFLRandom::GetRandomVectorInRangeFromStream(ActorOrComponent, Stream, Min, Max);
+	FHitResult SweepHitResult;
+	return SetRotationAxis(ActorOrComponent, Axis, Values, SweepHitResult, bRelative, false, false);
 }
 
 bool ULunarFLTransform::AddRotationAxis(UObject* ActorOrComponent, ELunarAxisFull Axis, FVector Values, FHitResult& SweepHitResult, bool bRelative, bool bSweep, bool bTeleport)

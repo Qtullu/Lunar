@@ -134,6 +134,66 @@ public:
 	static bool SetRotationAxis(UObject* ActorOrComponent, ELunarAxisFull Axis, FVector Values, FHitResult& SweepHitResult, bool bRelative = false, bool bSweep = false, bool bTeleport = false);
 
 	/**
+	 * @brief Sets selected rotation axes to random values
+	 * Actor uses world rotation when Relative is false
+	 * Actor uses root component relative rotation when Relative is true
+	 * Scene component uses world or relative rotation based on Relative
+	 * Min and Max X affect Roll
+	 * Min and Max Y affect Pitch
+	 * Min and Max Z affect Yaw
+	 * @param ActorOrComponent Target actor or scene component
+	 * @param Axis Axes to randomize
+	 * @param Min Minimum rotation axis values
+	 * @param Max Maximum rotation axis values
+	 * @param Quality Random generator quality
+	 * @param bRelative Uses relative rotation when true
+	 * @return True if rotation was changed
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Transform", meta = (DisplayName = "Set Random Rotation Axis", AdvancedDisplay = "Min,Max,Quality,bRelative"))
+	static bool SetRandomRotationAxis(UObject* ActorOrComponent, ELunarAxisFull Axis, FVector Min = FVector(-180.0, -180.0, -180.0), FVector Max = FVector(180.0, 180.0, 180.0), ELunarRandomQuality Quality = ELunarRandomQuality::Normal, bool bRelative = false);
+
+	/**
+	 * @brief Sets selected rotation axes to deterministic random values from seed
+	 * The same seed range quality and axes produce the same rotation values
+	 * Actor uses world rotation when Relative is false
+	 * Actor uses root component relative rotation when Relative is true
+	 * Scene component uses world or relative rotation based on Relative
+	 * Min and Max X affect Roll
+	 * Min and Max Y affect Pitch
+	 * Min and Max Z affect Yaw
+	 * @param ActorOrComponent Target actor or scene component
+	 * @param Axis Axes to randomize
+	 * @param Seed Random seed
+	 * @param Min Minimum rotation axis values
+	 * @param Max Maximum rotation axis values
+	 * @param Quality Random generator quality
+	 * @param bRelative Uses relative rotation when true
+	 * @return True if rotation was changed
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Transform", meta = (DisplayName = "Set Random Rotation Axis From Seed", AdvancedDisplay = "Min,Max,Quality,bRelative"))
+	static bool SetRandomRotationAxisFromSeed(UObject* ActorOrComponent, ELunarAxisFull Axis, int64 Seed, FVector Min = FVector(-180.0, -180.0, -180.0), FVector Max = FVector(180.0, 180.0, 180.0), ELunarRandomQuality Quality = ELunarRandomQuality::Normal, bool bRelative = false);
+
+	/**
+	 * @brief Sets selected rotation axes to deterministic random values from stream
+	 * Advances the stream after generating the rotation values
+	 * Actor uses world rotation when Relative is false
+	 * Actor uses root component relative rotation when Relative is true
+	 * Scene component uses world or relative rotation based on Relative
+	 * Min and Max X affect Roll
+	 * Min and Max Y affect Pitch
+	 * Min and Max Z affect Yaw
+	 * @param ActorOrComponent Target actor or scene component
+	 * @param Axis Axes to randomize
+	 * @param Stream Random stream
+	 * @param Min Minimum rotation axis values
+	 * @param Max Maximum rotation axis values
+	 * @param bRelative Uses relative rotation when true
+	 * @return True if rotation was changed
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Transform", meta = (DisplayName = "Set Random Rotation Axis From Stream", AdvancedDisplay = "Min,Max,bRelative"))
+	static bool SetRandomRotationAxisFromStream(UObject* ActorOrComponent, ELunarAxisFull Axis, UPARAM(ref) FLunarRandomStream& Stream, FVector Min = FVector(-180.0, -180.0, -180.0), FVector Max = FVector(180.0, 180.0, 180.0), bool bRelative = false);
+
+	/**
 	 * @brief Adds values to selected rotation axes on actor or scene component
 	 * Actor uses world rotation when Relative is false
 	 * Actor uses root component relative rotation when Relative is true

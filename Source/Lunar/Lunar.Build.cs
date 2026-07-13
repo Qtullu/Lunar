@@ -59,6 +59,11 @@ public class Lunar : ModuleRules
             }
         );
 
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd");
+        }
+
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             PublicSystemLibraries.Add("pdh.lib");

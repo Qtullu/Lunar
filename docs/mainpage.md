@@ -52,6 +52,8 @@ The plugin is intended as a reusable foundation for Unreal Engine projects and i
 
 <li>@ref LunarSubsystems</li>
 
+<li>@ref LunarComponents</li>
+
 <li>@ref LunarSettings</li>
 
 <li>@ref LunarTypes</li>
@@ -99,6 +101,22 @@ Subsystems are persistent runtime services used by the plugin and exposed to Blu
 
 
 @ref LunarRawInputSubsystem tracks raw input state detects the last active input device stores key mouse and wheel input snapshots and broadcasts raw input events
+
+
+
+@htmlonly
+
+<hr class="lunar-section-divider">
+
+@endhtmlonly
+
+
+
+@section lunar\_components Components
+
+
+
+@ref LunarAutoRotatorComponent rotates an actor or scene component to face Player Controller 0 camera an editor viewport camera or an overridden actor or scene component target with axis filtering rotation offset relative rotation and optional interpolation
 
 
 

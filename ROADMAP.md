@@ -1,8 +1,124 @@
 # Lunar Roadmap
 
-Roadmap for the Lunar plugin after Console V1
+Current implementation status and planned work for the Lunar plugin
 
 Target Unreal Engine version: **5.8**
+
+---
+
+## Execution Plan
+
+This section defines the delivery order. The numbered feature backlog below remains the detailed source of tasks, but its section number does not imply priority.
+
+### Current State
+
+Verified against the repository on 2026-07-12:
+
+- Console, Raw Input, Performance Monitor, and Draggable Window systems have substantive C++ implementations
+- JSON, Random, Chrono, Audio, Debug, Game, Transform, File, Console, Math, String, and Performance utility libraries contain public Blueprint APIs and C++ implementations
+- `W_Button`, the base widget pack, `W_LoadingScreen`, `ML_Actor`, and `ML_Object` assets exist, but their remaining interaction behavior still needs in-editor verification and completion
+- `UI`, `Save`, `Physics`, `Networking`, `DataTable`, and `Blockout` function libraries are currently API shells without Blueprint functions
+- The UE 5.8 Win64 project build has already completed successfully
+- Win64 is the only supported runtime platform
+- `ULunarPerformanceSubsystem::UpdatePerformanceStats` still contains a TODO for routing collected data to the Lunar console
+
+### Priority Definitions
+
+- **P0**: blocks the next stable plugin release
+- **P1**: completes the main reusable gameplay and UI toolset
+- **P2**: valuable expansion after the core is stable
+- **P3**: research or optional work that should not block a release
+
+### Milestone Order
+
+| Milestone | Priority | Outcome | Depends On |
+| --- | --- | --- | --- |
+| M0. Release Baseline | P0 | Plugin can be packaged and released for Win64 | None |
+| M1. UI Foundation | P0 | One consistent focus, navigation, style, and input-device model | M0 |
+| M2. UI Pack And Loading | P0 | Existing widget assets are production-ready and loading flow works across map travel | M1 |
+| M3. Core Utility Completion | P1 | Empty utility libraries expose a small useful API instead of placeholders | M0; UI utilities also depend on M1 |
+| M4. Activation And Blockout | P1 | Reusable level-design interaction chain and blockout kit | M0, M3 |
+| M5. Content And Audio Expansion | P2 | Reusable materials and audio presets with examples | M0 |
+| M6. Advanced Runtime Systems | P2 | Camera, UI model preview, and mesh proxy systems | M0-M2 |
+| M7. Browser Decision | P3 | Browser support is either scoped with evidence or removed from the roadmap | M0 |
+
+### M0. Release Baseline — Do Next
+
+- [x] Supported runtime platform: Win64 only
+- [x] Build the project successfully with UE 5.8 for Win64
+- [ ] Package the plugin with Unreal Automation Tool `BuildPlugin`
+- [ ] Resolve the unfinished `bCollectData` behavior in Performance Monitor
+  - [ ] Either send the requested performance summary to `ULunarConsoleSubsystem`
+  - [ ] Or remove `bCollectData` and its collection timer if this output mode is not needed
+- [ ] Fix packaging errors, broken Blueprint references, or plugin load warnings if any are found during packaging
+
+M0 is complete when the Win64 plugin packages successfully and the unfinished Performance Monitor branch is either implemented or removed.
+
+### M1. UI Foundation
+
+- [ ] Define shared style data for all required visual and input states
+- [ ] Implement deterministic directional navigation, fallback navigation, focus restore, and initial focus selection
+- [ ] Finish `W_Button` mouse, keyboard, gamepad, disabled-state, visual-state, and delegate behavior
+- [ ] Implement the minimal `LunarFLUI` focus helpers used by every Lunar widget
+- [ ] Verify keyboard, mouse, Xbox controller, and PlayStation 5 controller behavior in the example menu
+- [ ] Create `W_InputPrompt` with action-to-icon data, text fallback, and live device switching
+- [ ] Add an example menu used to validate navigation and input prompts end to end
+
+M1 is complete when the example menu can be operated without a mouse, focus never becomes lost, input prompts update on device change, and every visual state has a verified result.
+
+### M2. UI Pack And Loading
+
+- [ ] Complete and verify `W_ComboBox`, `W_ContextMenu`, `W_OptionSlider`, `W_Radio`, `W_Slider`, `W_Switch`, and `W_Tabs` against the M1 contract
+- [ ] Complete `W_GIF` playback, loop, and pause behavior
+- [ ] Add consistent change, click, focus, and selection delegates
+- [ ] Verify the widget pack with mouse, keyboard, Xbox controller, and PlayStation 5 controller
+- [ ] Implement `ULunarLoadingScreenSubsystem` and settings
+- [ ] Implement show, hide, visibility query, and level-open APIs
+- [ ] Keep the loading screen visible across travel, enforce minimum display time, then fade out after the destination map is ready
+- [ ] Verify repeated travel, failed travel, missing-widget handling, PIE, Standalone, and packaged builds
+
+M2 is complete when every existing widget meets one interaction contract and loading-screen travel works in both editor and packaged runtime without manual widget setup.
+
+### M3. Core Utility Completion
+
+- [ ] Define a small useful V1 API before implementing each empty library
+- [ ] Implement Save helpers for slot existence, async save/load, delete, metadata, versioning, and failure reporting
+- [ ] Implement Data Table helpers for safe row lookup, row names, filtering, and failure reporting
+- [ ] Implement Physics helpers for trace and sweep presets, overlap queries, and result filtering
+- [ ] Implement Blockout helpers only for operations required by the M4 blockout actors
+- [ ] Implement HTTP networking types, delegates, GET, JSON POST, headers, query parameters, timeout, and error handling
+- [ ] Add `HTTP` module dependencies only when the networking API is implemented
+- [ ] Add Actor and Component utilities from the detailed backlog
+- [ ] Remove or explicitly defer any empty public library that does not have an approved V1 use case
+
+M3 is complete when no public `LunarFL*` class is an undocumented placeholder and every new function handles invalid input safely.
+
+### M4-M7. Later Delivery
+
+- [ ] **M4 / P1:** build the activation base classes and components before individual actors
+- [ ] **M4 / P1:** prove the button -> trap -> button example chain, then add door, lever, pressure plate, and trigger variants
+- [ ] **M4 / P1:** build the blockout actor, helper, texture, and material kit around measured level-design use cases
+- [ ] **M5 / P2:** add audio cue, submix, attenuation, and concurrency templates with a small example map
+- [ ] **M5 / P2:** import Vitaliy's procedural materials with naming, instance, performance, and example-map checks
+- [ ] **M6 / P2:** deliver Free Camera before Photo Mode
+- [ ] **M6 / P2:** prototype UI Model Rendering and measure render-target cost before expanding it
+- [ ] **M6 / P2:** prototype Mesh Proxy switching with hysteresis, then benchmark MetaHuman and crowd cases
+- [ ] **M7 / P3:** time-box the UE 5.8 browser investigation and either approve a supported architecture or remove the feature
+- [ ] **Optional:** add a dedicated `LogLunar` category if filtering Lunar messages separately from `LogTemp` becomes useful
+- [ ] **Before a public release:** update `Version` and `VersionName` in `Lunar.uplugin` and add a short changelog
+
+### Continuous Definition Of Done
+
+Apply these checks to every milestone:
+
+- [ ] Public C++ API and Blueprint nodes follow consistent Lunar naming and categories
+- [ ] Invalid input fails safely and produces an actionable Lunar log or console message
+- [ ] Runtime code has no accidental editor-only dependency
+- [ ] Platform-specific behavior is guarded and documented
+- [ ] New public classes, structs, enums, and meaningful functions have Doxygen comments
+- [ ] `README.md`, `docs/mainpage.md`, screenshots, and examples are updated in the same milestone
+- [ ] Generated documentation completes without new warnings
+- [ ] The project builds and the changed feature works in its intended editor or runtime flow
 
 ---
 
@@ -24,6 +140,60 @@ Target Unreal Engine version: **5.8**
   - [x] Input mode handling
   - [x] Mouse cursor restore
   - [x] Project settings integration
+
+- [x] Raw Input System V1
+  - [x] Game Instance subsystem
+  - [x] Slate input preprocessor
+  - [x] Keyboard mouse and gamepad detection
+  - [x] Key pressed released and clicked events
+  - [x] Mouse position movement and wheel snapshots
+  - [x] Blueprint input state query API
+
+- [x] Performance Monitor V1
+  - [x] Game Instance subsystem
+  - [x] Automatic interval based sampling
+  - [x] Frame memory GPU CPU and disk metrics
+  - [x] Performance snapshots
+  - [x] Time based snapshot history
+  - [x] Average minimum and maximum history values
+  - [x] Performance widget
+  - [x] Low normal high and full detail levels
+  - [x] Performance widget hotkey
+  - [x] Project settings integration
+  - [x] UMG performance graph painting helper
+
+- [x] Draggable Window V1
+  - [x] Header and body dragging
+  - [x] Blueprint position and size API
+  - [x] Handle edge corner and anywhere resize modes
+  - [x] Minimum and maximum size limits
+  - [x] Parent and custom widget bounds
+  - [x] Clamp soft bounds and edge snap modes
+  - [x] Movement and resize state events
+
+- [x] Implemented Utility Function Libraries
+  - [x] Game and platform
+  - [x] Math
+  - [x] Random
+  - [x] String
+  - [x] Chrono
+  - [x] Debug
+  - [x] Audio
+  - [x] JSON
+  - [x] Performance
+  - [x] Console
+  - [x] Transform
+  - [x] File
+
+- [x] Reusable Default Content
+  - [x] Float vector and color curve library
+  - [x] Curve example assets and maps
+  - [x] Base materials and material presets
+  - [x] Base shape and dummy meshes
+  - [x] Default textures and UI icons
+  - [x] Inter Noto Sans and Golos Text font assets
+  - [x] Sound class hierarchy and game sound mix
+  - [x] Console and performance widgets and data tables
 
 ---
 
@@ -47,7 +217,7 @@ Goal: create a custom Lunar UI foundation with predictable gamepad navigation an
   - [ ] Fallback navigation
   - [ ] Focus restore
   - [ ] First selected widget logic
-- [ ] Create `W_Button`
+- [x] Create `W_Button`
   - [ ] Mouse support
   - [ ] Keyboard support
   - [ ] Gamepad support
@@ -59,7 +229,7 @@ Goal: create a custom Lunar UI foundation with predictable gamepad navigation an
   - [ ] Find first focusable Lunar widget
   - [ ] Set focus to Lunar widget
   - [ ] Restore previous focused widget
-  - [ ] Detect current input device type
+  - [x] Detect current input device type
 
 ---
 
@@ -90,36 +260,39 @@ Goal: show correct input prompts for Xbox PlayStation keyboard and mouse
 
 Goal: create production ready Lunar UI widgets using the same navigation and style rules
 
-- [ ] Create `W_ComboBox`
+Existing widget assets are tracked separately from their remaining interaction and navigation work
+
+- [x] Create `W_ComboBox`
   - [ ] Use Lunar entry widgets
   - [ ] Gamepad open close support
   - [ ] Gamepad selection support
-- [ ] Create `W_ContextMenu`
+- [x] Create `W_ContextMenu`
   - [ ] Use Lunar entries
   - [ ] Close on outside click
   - [ ] Keyboard and gamepad close support
-- [ ] Create `W_GIF`
+- [x] Create `W_GIF`
   - [ ] Playback control
   - [ ] Loop control
   - [ ] Optional pause control
-- [ ] Create `W_OptionSlider`
+- [x] Create `W_Emissive`
+- [x] Create `W_OptionSlider`
   - [ ] Button based left right option switching
   - [ ] Gamepad support
   - [ ] Value changed delegate
-- [ ] Create `W_Radio`
+- [x] Create `W_Radio`
   - [ ] Group support
   - [ ] Single selection mode
   - [ ] Gamepad support
-- [ ] Create `W_Slider`
+- [x] Create `W_Slider`
   - [ ] Mouse drag
   - [ ] Keyboard step
   - [ ] Gamepad step
   - [ ] Value changed delegate
-- [ ] Create `W_Switch`
+- [x] Create `W_Switch`
   - [ ] On off state
   - [ ] Mouse support
   - [ ] Gamepad support
-- [ ] Create `W_Tabs`
+- [x] Create `W_Tabs`
   - [ ] Use `W_Button` for every tab
   - [ ] Keyboard navigation
   - [ ] Gamepad navigation
@@ -132,7 +305,7 @@ Goal: create production ready Lunar UI widgets using the same navigation and sty
 
 Goal: create a Lunar loading system that can show a widget during level loading without the manual Create Widget then Open Level flow
 
-- [ ] Create `W_LoadingScreen`
+- [x] Create `W_LoadingScreen`
 - [ ] Create `ULunarLoadingScreenSubsystem`
 - [ ] Add loading screen settings
   - [ ] Loading widget class
@@ -225,17 +398,17 @@ Goal: provide fast level blockout assets and tools
 
 Goal: reduce repeated boilerplate and add reusable actor behavior
 
-- [ ] Add `ML_Actor` macros
+- [x] Add `ML_Actor` macro library asset
   - [ ] World validation helpers
   - [ ] Owner validation helpers
   - [ ] Component validation helpers
   - [ ] Lunar subsystem access helpers
-- [ ] Add `ML_Object` macros
+- [x] Add `ML_Object` macro library asset
   - [ ] World context helpers
   - [ ] Game instance helpers
   - [ ] Runtime validation helpers
 - [ ] Add useful scene components
-  - [ ] Auto rotate component
+  - [x] Auto rotate component
   - [ ] Follow component
   - [ ] Distance visibility component
   - [ ] Debug visualization component
@@ -250,12 +423,13 @@ Goal: reduce repeated boilerplate and add reusable actor behavior
 Goal: add reusable audio templates and audio setup assets without shipping music or sound content
 
 - [ ] Add sound cue templates
-- [ ] Add sound class presets
+- [x] Add sound class presets
+- [x] Add sound mix preset
 - [ ] Add submix presets
 - [ ] Add attenuation presets
 - [ ] Add concurrency presets
-- [ ] Add Blueprint audio helpers
-- [ ] Add runtime audio utility functions
+- [x] Add Blueprint audio helpers
+- [x] Add runtime audio utility functions
 
 ---
 
@@ -276,20 +450,27 @@ Goal: add procedural materials created by Vitaliy
 
 Goal: fill all empty and nearly empty `LunarFL` libraries with useful Blueprint and C++ helpers
 
-- [ ] Review all existing `LunarFL*` libraries
-- [ ] List empty libraries
-- [ ] List almost empty libraries
-- [ ] Add string utilities
-- [ ] Add file utilities
+- [x] Review all existing `LunarFL*` libraries
+- [x] List empty libraries: UI Save Physics Networking DataTable and Blockout
+- [x] List almost empty libraries: Math String and File
+- [x] Add math utilities
+- [x] Add random utilities
+- [x] Add string utilities
+- [x] Add chrono utilities
+- [x] Add file utilities
 - [ ] Add save utilities
-- [ ] Add game utilities
+- [x] Add game utilities
 - [ ] Add actor utilities
 - [ ] Add component utilities
-- [ ] Add transform utilities
+- [x] Add transform utilities
 - [ ] Add UI utilities
-- [ ] Add debug utilities
-- [ ] Add platform utilities
-- [ ] Add validation and Lunar console messages where needed
+- [x] Add debug utilities
+- [x] Add audio utilities
+- [x] Add JSON utilities
+- [x] Add performance utilities
+- [x] Add console utilities
+- [x] Add platform utilities
+- [x] Add validation and Lunar console messages where needed
 
 ---
 
@@ -318,18 +499,18 @@ Goal: add HTTP request utilities for Blueprint and C++
 
 Goal: add Blueprint friendly JSON conversion for structs and containers
 
-- [ ] Research `CustomThunk` implementation for wildcard structs
-- [ ] Add `USTRUCT` wildcard to JSON
-- [ ] Add JSON to `USTRUCT` wildcard
-- [ ] Add array to JSON
-- [ ] Add JSON to array
-- [ ] Add map to JSON
-- [ ] Add JSON to map
-- [ ] Add set to JSON
-- [ ] Add JSON to set
-- [ ] Add pretty print option
-- [ ] Add compact output option
-- [ ] Add validation and Lunar console messages
+- [x] Research `CustomThunk` implementation for wildcard structs
+- [x] Add `USTRUCT` wildcard to JSON
+- [x] Add JSON to `USTRUCT` wildcard
+- [x] Add array to JSON
+- [x] Add JSON to array
+- [x] Add map to JSON
+- [x] Add JSON to map
+- [x] Add set to JSON
+- [x] Add JSON to set
+- [x] Add pretty print option
+- [x] Add compact output option
+- [x] Add validation and Lunar console messages
 
 ---
 
@@ -419,13 +600,15 @@ Status: optional and may be removed later
 
 Goal: document everything after systems are stable
 
-- [ ] Add Doxygen comments to all new classes
-- [ ] Add Doxygen comments to all new structs
-- [ ] Add Doxygen comments to all new enums
-- [ ] Add Doxygen comments to all meaningful functions
-- [ ] Add system overview pages
+- [x] Add Doxygen comments to all new classes
+- [x] Add Doxygen comments to all new structs
+- [x] Add Doxygen comments to all new enums
+- [x] Add Doxygen comments to all meaningful functions
+- [x] Add system overview pages
 - [ ] Add Blueprint examples
-- [ ] Add C++ examples
+- [x] Add C++ examples
+- [x] Add Doxygen generation configuration
+- [x] Add GitHub Pages deployment workflow
 - [ ] Add screenshots one by one
 - [ ] Add console screenshots
 - [ ] Add UI widget screenshots

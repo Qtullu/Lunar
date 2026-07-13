@@ -29,6 +29,11 @@
  */
 
 /**
+ * @defgroup LunarComponents Components
+ * @brief Reusable runtime actor components
+ */
+
+/**
  * @defgroup LunarFLGame Game
  * @ingroup LunarFunctionLibraries
  * @brief Game and platform helper functions
@@ -278,4 +283,10 @@
  * @defgroup LunarDraggableWindow Draggable Window
  * @ingroup LunarWidgets
  * @brief Draggable and resizable window widget
+ */
+
+/**
+ * @defgroup LunarAutoRotatorComponent Auto Rotator
+ * @ingroup LunarComponents
+ * @brief Camera and target facing actor component
  */

@@ -25,6 +25,7 @@ The plugin is intended as a reusable foundation for Unreal Engine projects and i
 
 - [Function Libraries](https://qtullu.github.io/Lunar/group___lunar_function_libraries.html)
 - [Subsystems](https://qtullu.github.io/Lunar/group___lunar_subsystems.html)
+- [Components](https://qtullu.github.io/Lunar/group___lunar_components.html)
 - [Settings](https://qtullu.github.io/Lunar/group___lunar_settings.html)
 - [Types](https://qtullu.github.io/Lunar/group___lunar_types.html)
 - [Widgets](https://qtullu.github.io/Lunar/group___lunar_widgets.html)
@@ -46,6 +47,14 @@ Subsystems are persistent runtime services used by the plugin and exposed to Blu
 ### Raw Input
 
 [Raw Input Subsystem](https://qtullu.github.io/Lunar/group___lunar_raw_input_subsystem.html) tracks raw input state detects the last active input device stores key mouse and wheel input snapshots and broadcasts raw input events
+
+---
+
+## Components
+
+### Auto Rotator
+
+[Auto Rotator Component](https://qtullu.github.io/Lunar/group___lunar_auto_rotator_component.html) rotates an actor or scene component to face Player Controller 0 camera an editor viewport camera or an overridden actor or scene component target with axis filtering rotation offset relative rotation and optional interpolation
 
 ---
 
