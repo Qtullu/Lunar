@@ -1,6 +1,6 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-#include "Subsystems/LunarRawInputSubsystem.h"
+#include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "Subsystems/RawInput/LunarRawInputProcessor.h"

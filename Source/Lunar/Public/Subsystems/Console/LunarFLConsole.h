@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "Types/LunarTypesConsole.h"
+#include "Subsystems/Console/LunarTypesConsole.h"
 #include "LunarFLConsole.generated.h"
 
 /**

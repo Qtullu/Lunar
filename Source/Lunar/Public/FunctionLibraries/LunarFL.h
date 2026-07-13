@@ -18,8 +18,8 @@
 #include "LunarFLPhysics.h"
 #include "LunarFLBlockout.h"
 #include "LunarFLJSON.h"
-#include "LunarFLPerformance.h"
-#include "LunarFLConsole.h"
+#include "Subsystems/Performance/LunarFLPerformance.h"
+#include "Subsystems/Console/LunarFLConsole.h"
 #include "LunarFLTransform.h"
 #include "LunarFLFile.h"
 

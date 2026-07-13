@@ -14,7 +14,7 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 #include "UObject/Stack.h"
 #include "UObject/UnrealType.h"
 

@@ -1,8 +1,8 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 #include "Settings/LunarSettings.h"
-#include "Subsystems/LunarRawInputSubsystem.h"
+#include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Engine/GameInstance.h"

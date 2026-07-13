@@ -9,7 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Misc/App.h"
 #include "NativeGameplayTags.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 
 #if WITH_EDITOR
 #include "Editor.h"

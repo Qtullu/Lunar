@@ -12,7 +12,7 @@ This section defines the delivery order. The numbered feature backlog below rema
 
 ### Current State
 
-Verified against the repository on 2026-07-12:
+Verified against the repository on 2026-07-14:
 
 - Console, Raw Input, Performance Monitor, and Draggable Window systems have substantive C++ implementations
 - JSON, Random, Chrono, Audio, Debug, Game, Transform, File, Console, Math, String, and Performance utility libraries contain public Blueprint APIs and C++ implementations
@@ -20,7 +20,7 @@ Verified against the repository on 2026-07-12:
 - `UI`, `Save`, `Physics`, `Networking`, `DataTable`, and `Blockout` function libraries are currently API shells without Blueprint functions
 - The UE 5.8 Win64 project build has already completed successfully
 - Win64 is the only supported runtime platform
-- `ULunarPerformanceSubsystem::UpdatePerformanceStats` still contains a TODO for routing collected data to the Lunar console
+- Opt-in periodic Performance Monitor collection routes the current snapshot summary to the Lunar console without taking a second sample
 
 ### Priority Definitions
 
@@ -33,7 +33,7 @@ Verified against the repository on 2026-07-12:
 
 | Milestone | Priority | Outcome | Depends On |
 | --- | --- | --- | --- |
-| M0. Release Baseline | P0 | Plugin can be packaged and released for Win64 | None |
+| M0. Release Baseline | P0 | Runtime baseline is ready for the owner's manual Win64 packaging pass | None |
 | M1. UI Foundation | P0 | One consistent focus, navigation, style, and input-device model | M0 |
 | M2. UI Pack And Loading | P0 | Existing widget assets are production-ready and loading flow works across map travel | M1 |
 | M3. Core Utility Completion | P1 | Empty utility libraries expose a small useful API instead of placeholders | M0; UI utilities also depend on M1 |
@@ -42,19 +42,18 @@ Verified against the repository on 2026-07-12:
 | M6. Advanced Runtime Systems | P2 | Camera, UI model preview, and mesh proxy systems | M0-M2 |
 | M7. Browser Decision | P3 | Browser support is either scoped with evidence or removed from the roadmap | M0 |
 
-### M0. Release Baseline — Do Next
+### M0. Release Baseline — Complete
 
 - [x] Supported runtime platform: Win64 only
 - [x] Build the project successfully with UE 5.8 for Win64
-- [ ] Package the plugin with Unreal Automation Tool `BuildPlugin`
-- [ ] Resolve the unfinished `bCollectData` behavior in Performance Monitor
-  - [ ] Either send the requested performance summary to `ULunarConsoleSubsystem`
-  - [ ] Or remove `bCollectData` and its collection timer if this output mode is not needed
-- [ ] Fix packaging errors, broken Blueprint references, or plugin load warnings if any are found during packaging
+- [x] Resolve the unfinished `bCollectData` behavior in Performance Monitor
+  - [x] Send the requested performance summary to `ULunarConsoleSubsystem`
+  - [x] Reuse the current snapshot instead of collecting performance data twice
+  - [x] Keep periodic summary output disabled by default to avoid log spam
 
-M0 is complete when the Win64 plugin packages successfully and the unfinished Performance Monitor branch is either implemented or removed.
+M0 implementation work is complete. Final `BuildPlugin` packaging and packaging-only fixes are owner-run release tasks and are intentionally not tracked as implementation work here.
 
-### M1. UI Foundation
+### M1. UI Foundation — Do Next
 
 - [ ] Define shared style data for all required visual and input states
 - [ ] Implement deterministic directional navigation, fallback navigation, focus restore, and initial focus selection
@@ -161,6 +160,7 @@ Apply these checks to every milestone:
   - [x] Performance widget hotkey
   - [x] Project settings integration
   - [x] UMG performance graph painting helper
+  - [x] Opt-in periodic snapshot summaries routed to the Lunar console
 
 - [x] Draggable Window V1
   - [x] Header and body dragging

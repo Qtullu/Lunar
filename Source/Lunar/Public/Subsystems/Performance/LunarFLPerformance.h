@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "LunarTypes.h"
+#include "Subsystems/Performance/LunarTypesPerformance.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/UserWidget.h"
@@ -625,6 +625,18 @@ public:
 	static FString GetPerformanceSummaryMultilineString(
 		ELunarPerformanceSummaryDetail Detail = ELunarPerformanceSummaryDetail::Full,
 		ELunarMemoryUnit Unit = ELunarMemoryUnit::Megabytes
+	);
+
+	/**
+	 * @brief Formats an existing performance snapshot as a multiline summary without collecting new statistics
+	 * @param Snapshot Performance snapshot to format
+	 * @param Detail Summary detail level
+	 * @return Multiline performance summary
+	 */
+	UFUNCTION(BlueprintPure, Category = "Lunar|Performance|Summary")
+	static FString FormatPerformanceSnapshotMultilineString(
+		const FLunarPerformanceSnapshot& Snapshot,
+		ELunarPerformanceSummaryDetail Detail = ELunarPerformanceSummaryDetail::Full
 	);
 
 	// Settings

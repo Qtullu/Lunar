@@ -6,7 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "InputCoreTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
-#include "Types/LunarTypesConsole.h"
+#include "Subsystems/Console/LunarTypesConsole.h"
 #include "LunarConsoleSubsystem.generated.h"
 
 /**

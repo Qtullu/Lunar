@@ -11,7 +11,7 @@
 #include "Sound/SoundClass.h"
 #include "Sound/SoundConcurrency.h"
 #include "Sound/SoundMix.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Lunar_Audio, "Lunar.Audio");
 

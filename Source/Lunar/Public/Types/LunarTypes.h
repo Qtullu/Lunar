@@ -18,8 +18,8 @@
 //#include "LunarTypesPhysics.h"
 //#include "LunarTypesBlockout.h"
 //#include "LunarTypesJSON.h"
-#include "LunarTypesPerformance.h"
-#include "LunarRawInputTypes.h"
+#include "Subsystems/Performance/LunarTypesPerformance.h"
+#include "Subsystems/RawInput/LunarRawInputTypes.h"
 #include "LunarTypesTransform.h"
 
 /**

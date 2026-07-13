@@ -4,7 +4,7 @@
 
 #include "Containers/ScriptArray.h"
 #include "NativeGameplayTags.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 #include "UObject/UnrealType.h"
 
 #include <random>

@@ -6,7 +6,7 @@
 #include "InputCoreTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
-#include "LunarTypes.h"
+#include "Subsystems/Performance/LunarTypesPerformance.h"
 #include "LunarPerformanceSubsystem.generated.h"
 
 /**
@@ -132,7 +132,7 @@ public:
 
 	/**
 	 * @brief Updates performance statistics immediately
-	 * @param bCollectData Sends collected data to console or log system
+	 * @param bCollectData Sends current snapshot summary to Lunar console using collection output detail level
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance")
 	void UpdatePerformanceStats(bool bCollectData = false);
@@ -274,34 +274,49 @@ public:
 	// Data collection
 
 	/**
-	 * @brief Enables or disables periodic performance data collection
-	 * @param bCollect New collection state
-	 * @return True if collection state was applied
+	 * @brief Enables or disables periodic performance summary output
+	 * @param bCollect New summary output state
+	 * @return True if summary output state was applied
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance")
 	bool SetCollectPerformanceData(bool bCollect);
 
 	/**
-	 * @brief Checks whether periodic performance data collection is enabled
-	 * @return True if collection is enabled
+	 * @brief Checks whether periodic performance summary output is enabled
+	 * @return True if summary output is enabled
 	 */
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance")
 	bool IsCollectDataEnabled() const;
 
 	/**
-	 * @brief Sets periodic performance data collection interval
-	 * @param Interval Collection interval in seconds
-	 * @return True if collection interval was applied
+	 * @brief Sets periodic performance summary output interval
+	 * @param Interval Summary output interval in seconds
+	 * @return True if summary output interval was applied
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance")
 	bool SetCollectPerformanceDataInterval(float Interval = 10.0f);
 
 	/**
-	 * @brief Gets periodic performance data collection interval
-	 * @return Collection interval in seconds
+	 * @brief Gets periodic performance summary output interval
+	 * @return Summary output interval in seconds
 	 */
 	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance")
 	float GetCollectPerformanceDataInterval() const;
+
+	/**
+	 * @brief Sets detail level used for periodic performance summary output
+	 * @param NewDetailLevel New collection output detail level
+	 * @return Applied collection output detail level
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|Subsystems|Performance|Collection")
+	ELunarPerformanceSummaryDetail SetCollectionOutputDetailLevel(ELunarPerformanceSummaryDetail NewDetailLevel);
+
+	/**
+	 * @brief Gets detail level used for periodic performance summary output
+	 * @return Current collection output detail level
+	 */
+	UFUNCTION(BlueprintPure, Category = "Lunar|Subsystems|Performance|Collection")
+	ELunarPerformanceSummaryDetail GetCollectionOutputDetailLevel() const;
 
 	/**
 	 * @brief Checks whether performance monitoring can run in current environment
@@ -479,11 +494,15 @@ private:
 	/** Time since last performance update */
 	float TimeSinceLastUpdate = 0.0f;
 
-	/** Performance data collection interval in seconds */
+	/** Performance summary output interval in seconds */
 	float CollectPerformanceDataInterval = 10.0f;
 
-	/** Time since last performance data collection */
+	/** Time since last performance summary output */
 	float TimeSinceLastCollectPerformanceData = 0.0f;
+
+	/** Detail level used for periodic performance summary output */
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Subsystems|Performance|Collection", meta = (AllowPrivateAccess = "true"))
+	ELunarPerformanceSummaryDetail CollectionOutputDetailLevel = ELunarPerformanceSummaryDetail::Full;
 
 	/** Performance widget Z order */
 	int32 PerformanceWidgetZOrder = 9999;
@@ -494,7 +513,7 @@ private:
 	/** Runtime performance monitoring state */
 	bool bMonitoringEnabled = false;
 
-	/** Runtime performance data collection state */
+	/** Runtime periodic performance summary output state */
 	bool bCollectPerformanceData = false;
 
 	/** Allows monitoring in editor builds */

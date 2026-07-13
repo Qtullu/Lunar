@@ -3,7 +3,7 @@
 #include "LunarFLChrono.h"
 
 #include "NativeGameplayTags.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Lunar_Chrono, "Lunar.Chrono");
 

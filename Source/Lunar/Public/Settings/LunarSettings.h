@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
-#include "Subsystems/LunarPerformanceSubsystem.h"
-#include "LunarTypesConsole.h"
+#include "Subsystems/Console/LunarTypesConsole.h"
+#include "Subsystems/Performance/LunarTypesPerformance.h"
 #include "LunarSettings.generated.h"
 
 /**

@@ -1,6 +1,6 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-#include "FunctionLibraries/LunarFLPerformance.h"
+#include "Subsystems/Performance/LunarFLPerformance.h"
 
 #include "LunarFL.h"
 
@@ -1442,7 +1442,12 @@ FString ULunarFLPerformance::GetPerformanceSummaryString(ELunarPerformanceSummar
 FString ULunarFLPerformance::GetPerformanceSummaryMultilineString(ELunarPerformanceSummaryDetail Detail, ELunarMemoryUnit Unit)
 {
 	const FLunarPerformanceSnapshot Snapshot = GetPerformanceSnapshot(Unit);
-	const FString UnitSuffix = GetMemoryUnitSuffix(Unit);
+	return FormatPerformanceSnapshotMultilineString(Snapshot, Detail);
+}
+
+FString ULunarFLPerformance::FormatPerformanceSnapshotMultilineString(const FLunarPerformanceSnapshot& Snapshot, ELunarPerformanceSummaryDetail Detail)
+{
+	const FString UnitSuffix = GetMemoryUnitSuffix(Snapshot.Unit);
 
 	TStringBuilder<8192> Builder;
 

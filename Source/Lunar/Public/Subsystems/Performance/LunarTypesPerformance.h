@@ -348,7 +348,7 @@ struct LUNAR_API FLunarPerformanceGeneralSettings
 };
 
 /**
- * @brief Stores periodic performance data collection settings
+ * @brief Stores periodic performance summary output settings
  * @ingroup LunarTypesPerformance
  */
 USTRUCT(BlueprintType)
@@ -356,12 +356,16 @@ struct LUNAR_API FLunarPerformanceCollectionSettings
 {
 	GENERATED_BODY()
 
-	/** Enables periodic performance data collection */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Collection", meta = (DisplayName = "Collect Performance Data", ToolTip = "If enabled, the subsystem periodically sends collected performance data to the logging or console system."))
-	bool bCollectPerformanceData = true;
+	/** Enables opt-in periodic performance summary output */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Collection", meta = (DisplayName = "Output Performance Summary", ToolTip = "If explicitly enabled, the subsystem periodically sends the current performance summary to the Lunar console."))
+	bool bCollectPerformanceData = false;
 
-	/** Performance data collection interval in seconds */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Collection", meta = (ClampMin = "0.1", UIMin = "0.1", DisplayName = "Collection Interval", ToolTip = "How often performance data is collected and sent to the logging or console system, in seconds."))
+	/** Detail level used for periodic performance summary output */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Collection", meta = (DisplayName = "Output Detail Level", ToolTip = "Controls how much of the collected performance snapshot is sent to the Lunar console. This is independent of the performance widget detail level."))
+	ELunarPerformanceSummaryDetail OutputDetailLevel = ELunarPerformanceSummaryDetail::Full;
+
+	/** Performance summary output interval in seconds */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Collection", meta = (ClampMin = "0.1", UIMin = "0.1", DisplayName = "Output Interval", ToolTip = "How often the current performance summary is sent to the Lunar console, in seconds."))
 	float CollectPerformanceDataInterval = 10.0f;
 };
 

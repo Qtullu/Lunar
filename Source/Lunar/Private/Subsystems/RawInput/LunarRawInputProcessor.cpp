@@ -4,7 +4,7 @@
 
 #include "Framework/Application/SlateApplication.h"
 #include "Input/Events.h"
-#include "Subsystems/LunarRawInputSubsystem.h"
+#include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
 FLunarRawInputProcessor::FLunarRawInputProcessor(TWeakObjectPtr<ULunarRawInputSubsystem> InSubsystem)
 	: Subsystem(InSubsystem)

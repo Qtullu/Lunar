@@ -1,7 +1,7 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-#include "FunctionLibraries/LunarFLConsole.h"
-#include "Subsystems/LunarConsoleSubsystem.h"
+#include "Subsystems/Console/LunarFLConsole.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"

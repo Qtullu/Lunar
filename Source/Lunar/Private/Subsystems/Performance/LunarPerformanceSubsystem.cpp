@@ -1,21 +1,25 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-#include "Subsystems/LunarPerformanceSubsystem.h"
+#include "Subsystems/Performance/LunarPerformanceSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 #include "HAL/PlatformTime.h"
 #include "LunarFL.h"
 #include "Settings/LunarSettings.h"
-#include "Subsystems/LunarRawInputSubsystem.h"
+#include "Subsystems/Console/LunarConsoleSubsystem.h"
+#include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
 void ULunarPerformanceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
+	Collection.InitializeDependency(ULunarConsoleSubsystem::StaticClass());
 	Collection.InitializeDependency(ULunarRawInputSubsystem::StaticClass());
 
 	LastSampleTimeSeconds = 0.0;
 	DetailLevel = ELunarPerformanceSummaryDetail::Low;
+	CollectionOutputDetailLevel = ELunarPerformanceSummaryDetail::Full;
 
 	ApplySettings();
 
@@ -61,6 +65,7 @@ void ULunarPerformanceSubsystem::ApplySettings()
 
 	bCollectPerformanceData = Settings.Collection.bCollectPerformanceData;
 	CollectPerformanceDataInterval = FMath::Max(Settings.Collection.CollectPerformanceDataInterval, 0.1f);
+	CollectionOutputDetailLevel = Settings.Collection.OutputDetailLevel;
 
 	bEnabledInEditor = Settings.Environment.bEnabledInEditor;
 	bEnabledInDebug = Settings.Environment.bEnabledInDebug;
@@ -172,14 +177,13 @@ void ULunarPerformanceSubsystem::UpdatePerformanceStats(bool bCollectData)
 
 	if (bCollectData)
 	{
-		//TODO send to console
-		
-		//UE_LOG(
-		//	LogTemp,
-		//	Log,
-		//	TEXT("LunarPerformanceSubsystem:\n%s"),
-		//	*LunarFL::Performance::GetPerformanceSummaryMultilineString(DetailLevel, ELunarMemoryUnit::Megabytes)
-		//);
+		const FString Summary = LunarFL::Performance::FormatPerformanceSnapshotMultilineString(CurrentSnapshot, CollectionOutputDetailLevel);
+		const FGameplayTag ConsoleCategory = FGameplayTag::RequestGameplayTag(TEXT("Lunar.Console"), false);
+		ULunarConsoleSubsystem::AddMessage(
+			ConsoleCategory,
+			ELunarConsoleMessageVerbosity::Info,
+			Summary
+		);
 	}
 }
 
@@ -329,6 +333,17 @@ bool ULunarPerformanceSubsystem::SetCollectPerformanceDataInterval(float Interva
 float ULunarPerformanceSubsystem::GetCollectPerformanceDataInterval() const
 {
 	return CollectPerformanceDataInterval;
+}
+
+ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::SetCollectionOutputDetailLevel(ELunarPerformanceSummaryDetail NewDetailLevel)
+{
+	CollectionOutputDetailLevel = NewDetailLevel;
+	return CollectionOutputDetailLevel;
+}
+
+ELunarPerformanceSummaryDetail ULunarPerformanceSubsystem::GetCollectionOutputDetailLevel() const
+{
+	return CollectionOutputDetailLevel;
 }
 
 bool ULunarPerformanceSubsystem::CanMonitorInCurrentEnvironment() const

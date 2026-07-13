@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
-#include "Types/LunarRawInputTypes.h"
+#include "Subsystems/RawInput/LunarRawInputTypes.h"
 #include "LunarRawInputSubsystem.generated.h"
 
 /**
