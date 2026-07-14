@@ -6,6 +6,7 @@ DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "Lunar Plugin"
 PROJECT_BRIEF          = "Runtime subsystems, function libraries, widgets etc."
 PROJECT_NUMBER         = "UE 5.8"
+PROJECT_ICON           = docs/assets/favicon.png
 OUTPUT_DIRECTORY       = docs
 OUTPUT_LANGUAGE        = English
 MARKDOWN_SUPPORT       = YES
@@ -17,7 +18,10 @@ USE_MDFILE_AS_MAINPAGE =
 
 INPUT                  = Source \
                          docs/mainpage.md \
-                         docs/groups.dox
+                         docs/groups.dox \
+                         docs/UI_NAVIGATION_SPEC.md \
+                         docs/UI_NAVIGATION_OWNER_HANDOFF.md \
+                         docs/UI_BUTTON_OWNER_HANDOFF.md
 
 INPUT_ENCODING         = UTF-8
 RECURSIVE              = YES
@@ -47,7 +51,12 @@ EXCLUDE_PATTERNS       = */Binaries/* \
                          */docs/xml/* \
                          */docs/doxygen-awesome-css/*
 
-EXCLUDE_SYMBOLS        =
+EXCLUDE_SYMBOLS        = LOCTEXT_NAMESPACE \
+                         DEFINE_LOG_CATEGORY_STATIC* \
+                         UE_DEFINE_GAMEPLAY_TAG_COMMENT* \
+                         DECLARE_FUNCTION* \
+                         exec* \
+                         LUNAR_*
 IMAGE_PATH             = docs
 
 #---------------------------------------------------------------------------
@@ -71,7 +80,7 @@ XML_PROGRAMLISTING     = YES
 # Extraction
 #---------------------------------------------------------------------------
 
-EXTRACT_ALL            = YES
+EXTRACT_ALL            = NO
 EXTRACT_PRIVATE        = YES
 EXTRACT_PRIV_VIRTUAL   = YES
 EXTRACT_PACKAGE        = YES
@@ -134,10 +143,11 @@ VERBATIM_HEADERS       = YES
 
 QUIET                  = NO
 WARNINGS               = YES
-WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_UNDOCUMENTED   = YES
 WARN_IF_DOC_ERROR      = YES
 WARN_IF_INCOMPLETE_DOC = YES
 WARN_NO_PARAMDOC       = NO
+WARN_IF_UNDOC_ENUM_VAL = NO
 WARN_AS_ERROR          = NO
 WARN_FORMAT            = "$file:$line: $text"
 WARN_LOGFILE           = docs/doxygen-warnings.txt
@@ -244,8 +254,6 @@ HTML_FILE_EXTENSION    = .html
 HTML_HEADER            =
 HTML_FOOTER            =
 HTML_STYLESHEET        =
-HTML_FAVICON           = docs/assets/favicon.png
-
 HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome-css/doxygen-awesome.css \
                          docs/doxygen-awesome-css/doxygen-awesome-sidebar-only.css \
                          docs/lunar-custom.css
@@ -285,7 +293,6 @@ SEARCHDATA_FILE        = searchdata.xml
 
 HTML_FORMULA_FORMAT    = svg
 FORMULA_FONTSIZE       = 10
-FORMULA_TRANSPARENT    = YES
 USE_MATHJAX            = NO
 
 #---------------------------------------------------------------------------
@@ -318,7 +325,6 @@ DIR_GRAPH_MAX_DEPTH    = 10
 DOT_GRAPH_MAX_NODES    = 300
 MAX_DOT_GRAPH_DEPTH    = 0
 DOT_WRAP_THRESHOLD     = 35
-DOT_MULTI_TARGETS      = YES
 GENERATE_LEGEND        = YES
 DOT_CLEANUP            = YES
 
@@ -334,8 +340,6 @@ DOT_FONTPATH           =
 LAYOUT_FILE            =
 ALIASES                =
 TAB_SIZE               = 4
-INDENTING              = YES
-
 #---------------------------------------------------------------------------
 # Misc
 #---------------------------------------------------------------------------

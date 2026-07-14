@@ -12,18 +12,24 @@
  * @ingroup LunarTypesRawInput
  */
 
- /**
-  * @brief Defines the last detected input device type
-  * @ingroup LunarTypesRawInput
-  */
+/**
+ * @brief Defines the last detected input device type
+ * @ingroup LunarTypesRawInput
+ */
 UENUM(BlueprintType)
 enum class ELunarInputDeviceType : uint8
 {
-	Unknown UMETA(DisplayName = "Unknown"),
-	KeyboardMouse UMETA(DisplayName = "Keyboard & Mouse"),
-	Gamepad UMETA(DisplayName = "Gamepad"),
-	Touch UMETA(DisplayName = "Touch")
+	Unknown UMETA(DisplayName = "Unknown"), ///< No input device has been detected.
+	KeyboardMouse UMETA(DisplayName = "Keyboard & Mouse"), ///< Keyboard or mouse input.
+	Gamepad UMETA(DisplayName = "Gamepad"), ///< Gamepad button or axis input.
+	Touch UMETA(DisplayName = "Touch") ///< Touch-screen pointer input.
 };
+
+/**
+ * @brief Called with the newly active device category when the last detected input device changes
+ * @ingroup LunarTypesRawInput
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarInputDeviceChangedSignature, ELunarInputDeviceType, NewInputDevice);
 
 /**
  * @brief Stores raw input state captured by Lunar input systems
@@ -38,6 +44,14 @@ public:
 	/** Last detected input device */
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Input")
 	ELunarInputDeviceType LastInputDevice = ELunarInputDeviceType::Unknown;
+
+	/** Local-player index that owned the most recent routed Slate event. */
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Input")
+	int32 LastLocalPlayerIndex = INDEX_NONE;
+
+	/** Slate user index carried by the most recent routed event. */
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Input")
+	int32 LastSlateUserIndex = INDEX_NONE;
 
 	/** Current mouse position */
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|Input")

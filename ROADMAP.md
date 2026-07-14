@@ -53,17 +53,56 @@ Verified against the repository on 2026-07-14:
 
 M0 implementation work is complete. Final `BuildPlugin` packaging and packaging-only fixes are owner-run release tasks and are intentionally not tracked as implementation work here.
 
-### M1. UI Foundation — Do Next
+### M1. UI Foundation — In Progress
 
-- [ ] Define shared style data for all required visual and input states
-- [ ] Implement deterministic directional navigation, fallback navigation, focus restore, and initial focus selection
-- [ ] Finish `W_Button` mouse, keyboard, gamepad, disabled-state, visual-state, and delegate behavior
-- [ ] Implement the minimal `LunarFLUI` focus helpers used by every Lunar widget
-- [ ] Verify keyboard, mouse, Xbox controller, and PlayStation 5 controller behavior in the example menu
-- [ ] Create `W_InputPrompt` with action-to-icon data, text fallback, and live device switching
-- [ ] Add an example menu used to validate navigation and input prompts end to end
+Implementation follows `docs/UI_NAVIGATION_SPEC.md` in strict phase order. Runtime C++ never creates or mutates Content assets, and `ULunarDraggableWindow` remains outside the navigation hierarchy and unchanged.
 
-M1 is complete when the example menu can be operated without a mouse, focus never becomes lost, input prompts update on device change, and every visual state has a verified result.
+- [x] **Phase 1 — Types And Settings**
+  - [x] Add finalized navigation enums, links, groups, scope, repeat, analog, pointer, action-context, and validation declarations
+  - [x] Add finalized typed style, transition, sound, haptic, prompt, and icon-entry declarations
+  - [x] Reuse `ELunarInputDeviceType` and expose the shared `FLunarInputDeviceChangedSignature` contract from Raw Input types
+  - [x] Add all finalized `Lunar.UI.Action.*` and `Lunar.UI.State.Value.*` native Gameplay Tags
+  - [x] Seed the eight built-in semantic action definitions with their default keyboard and gamepad bindings
+  - [x] Add `ULunarSettings::Navigation` with Input, Behavior, Default Styles, Audio, Haptics, Prompts, Accessibility, and Diagnostics sections
+  - [x] Keep every owner-created Content reference null and mark only intended Lunar defaults with `TODO(LunarUI)`
+  - [x] Verify the Phase 1 declarations build on UE 5.8 Win64
+- [x] **Phase 2 — Core Runtime**
+  - [x] Implement the per-local-player navigation subsystem and non-visual scope stack
+  - [x] Implement automatic screen scope lifecycle, registration, stable IDs, groups, priority, explicit links, geometric fallback, wrap, restore, reset, and recovery
+  - [x] Route Raw Input to the owning local player and consume handled key-down, matching key-up, analog, pointer, and touch input before gameplay
+  - [x] Synchronize authoritative Lunar Selection with native focus and explicit native-focus delegation
+- [x] **Phase 3 — Base Widget And Button**
+  - [x] Implement `ULunarNavigableWidget`, shared state, feedback, prompt, accessibility, pointer, and scroll hooks
+  - [x] Implement `ULunarScrollBox` as the supported non-selectable navigation container
+  - [x] Implement `ULunarButton` as the reference release-activated control
+  - [x] Document owner-performed `W_Button` reparenting and binding without changing the asset
+- [x] **Phase 4 — Value Controls**
+  - [x] Implement Slider and OptionSlider orientation, stepping, preview, commit, cancellation, wrap, and repeat behavior
+  - [x] Implement Switch directional modes
+  - [x] Implement Radio and non-visual Radio Group selection rules
+- [x] **Phase 5 — Composite Controls**
+  - [x] Implement ListView logical selection, virtualization, stable item IDs, scrolling, and restoration
+  - [x] Implement ComboBox filtering and nested option scope
+  - [x] Implement ContextMenu and one-scope-at-a-time submenu Back behavior
+  - [x] Implement horizontal and vertical Tabs, page lifetimes, and descendant restoration
+- [x] **Phase 6 — Prompt And Presentation Assets**
+  - [x] Implement prompt receiver and default C++ prompt widget contracts
+  - [x] Implement Icon Set, Action Registry, and strongly typed Style Data Asset resolution without creating asset instances
+  - [x] Connect per-player device switching, null-safe defaults, visible missing-icon placeholders, and deduplicated configuration errors
+  - [x] Leave every owner-created style, sound, haptic, prompt, and icon integration for a separately requested Content pass
+- [ ] **Phase 7 — Debugging, Editor Integration, And Owner Handoff**
+  - [x] Implement validation, graph diagnostics, graph dump, and debug overlay
+  - [x] Add the editor-only `LunarEditor` module for Details customization and automated validation fixes
+  - [x] Provide the owner checklist for an example menu covering every control and nested scope
+  - [ ] Manually verify mouse, keyboard, Xbox, PlayStation 5, and gameplay-input isolation after owner Content integration
+  - [x] Update README and Doxygen documentation for the C++ system and owner handoff
+  - [ ] Add screenshots and Content examples after the owner provides or integrates them
+
+Phase 7 C++ implementation, editor integration, diagnostics, and documentation are complete. The phase remains open only for the owner-run Content integration, device matrix, gameplay-input isolation check, and any resulting screenshots or examples.
+
+The next owner pass is tracked as a strict one-widget-at-a-time sequence in [UI Navigation Owner Handoff — Ordered Widget Test And Defaults Queue](docs/UI_NAVIGATION_OWNER_HANDOFF.md#7-ordered-widget-test-and-defaults-queue). Verify each row before assigning its default assets or moving to the next control.
+
+M1 is complete when the C++ system builds on UE 5.8 Win64 and, after owner Content integration, the example menu can be operated without a mouse, focus never becomes lost, input prompts update on device change, handled UI input cannot reach gameplay, and every supported control follows the shared contract.
 
 ### M2. UI Pack And Loading
 
@@ -201,22 +240,22 @@ Apply these checks to every milestone:
 
 Goal: create a custom Lunar UI foundation with predictable gamepad navigation and reusable visual states
 
-- [ ] Design shared UI style data
-  - [ ] Default state
-  - [ ] Hovered state
-  - [ ] Pressed state
-  - [ ] Selected state
-  - [ ] Disabled state
-  - [ ] Gamepad selected state
-  - [ ] Gamepad unselected state
-- [ ] Design base navigation rules
-  - [ ] Explicit up navigation
-  - [ ] Explicit down navigation
-  - [ ] Explicit left navigation
-  - [ ] Explicit right navigation
-  - [ ] Fallback navigation
-  - [ ] Focus restore
-  - [ ] First selected widget logic
+- [x] Design and implement shared UI style data
+  - [x] Strongly typed per-control style assets and common patch fields
+  - [x] Base, value-state, interaction-state, and per-instance override layers
+  - [x] Pointer Normal, Hovered, and Pressed interaction states
+  - [x] Navigation Normal, Selected, and Pressed interaction states shared by keyboard and gamepad
+  - [x] Normal, control-specific, and Disabled value states
+  - [x] Root-to-leaf parent resolution, transitions, and device-aware presentation context
+- [x] Design and implement base navigation rules
+  - [x] Explicit up navigation
+  - [x] Explicit down navigation
+  - [x] Explicit left navigation
+  - [x] Explicit right navigation
+  - [x] Deterministic geometric fallback navigation
+  - [x] Selection restore
+  - [x] Initial selection logic
+- [x] Implement the native `ULunarButton` interaction contract
 - [x] Create `W_Button`
   - [ ] Mouse support
   - [ ] Keyboard support
@@ -237,16 +276,18 @@ Goal: create a custom Lunar UI foundation with predictable gamepad navigation an
 
 Goal: show correct input prompts for Xbox PlayStation keyboard and mouse
 
+- [x] Implement `ULunarInputPromptWidget` and `ILunarInputPromptReceiver`
 - [ ] Create `W_InputPrompt`
-- [ ] Add input device type support
-  - [ ] Xbox controller
-  - [ ] PlayStation 5 controller
-  - [ ] Keyboard
-  - [ ] Mouse
-- [ ] Add prompt source data
-  - [ ] Icon by input action
-  - [ ] Text fallback by input action
-  - [ ] Platform specific icon set
+- [x] Implement runtime input-device prompt resolution contracts
+  - [x] Xbox controller family
+  - [x] PlayStation 5 controller family
+  - [x] Keyboard
+  - [x] Mouse
+- [x] Implement prompt source data contracts
+  - [x] Icon resolution by semantic action and resolved key
+  - [x] Localized text fallback by semantic action
+  - [x] Platform-specific icon-set selection
+- [ ] Author and assign owner-managed Prompt Widget and Icon Set Content
 - [ ] Add usage modes
   - [ ] Standalone hint widget
   - [ ] Hint above button
@@ -261,6 +302,8 @@ Goal: show correct input prompts for Xbox PlayStation keyboard and mouse
 Goal: create production ready Lunar UI widgets using the same navigation and style rules
 
 Existing widget assets are tracked separately from their remaining interaction and navigation work
+
+Native `ULunar*` controls are implemented under M1. The `W_*` rows below track owner Content integration and manual verification only.
 
 - [x] Create `W_ComboBox`
   - [ ] Use Lunar entry widgets
@@ -620,7 +663,7 @@ Goal: document everything after systems are stable
 - [ ] Add photo mode screenshots
 - [ ] Add model preview screenshots
 - [ ] Sync `README.md` with `docs/mainpage.md`
-- [ ] Verify generated Doxygen site
+- [x] Verify generated Doxygen site
 
 ---
 

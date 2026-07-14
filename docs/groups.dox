@@ -34,6 +34,53 @@
  */
 
 /**
+ * @defgroup LunarNavigation UI Navigation
+ * @brief Per-local-player navigation, controls, styles, prompts, and diagnostics
+ */
+
+/**
+ * @defgroup LunarNavigationCore Core
+ * @ingroup LunarNavigation
+ * @brief Navigation subsystem, scopes, screens, selection, focus, and input routing
+ */
+
+/**
+ * @defgroup LunarNavigationControls Controls
+ * @ingroup LunarNavigation
+ * @brief Selectable controls and non-selectable navigation containers
+ */
+
+/**
+ * @defgroup LunarNavigationStyles Styles
+ * @ingroup LunarNavigation
+ * @brief Typed style patches, Data Assets, inheritance, and transition resolution
+ */
+
+/**
+ * @defgroup LunarNavigationPrompts Input Prompts
+ * @ingroup LunarNavigation
+ * @brief Semantic prompt requests, receiver contracts, icon resolution, and presentation
+ */
+
+/**
+ * @defgroup LunarNavigationData Data
+ * @ingroup LunarNavigation
+ * @brief Action registries and device-specific input icon sets
+ */
+
+/**
+ * @defgroup LunarNavigationTypes Types And Settings
+ * @ingroup LunarNavigation
+ * @brief Shared navigation enums, structs, delegates, Gameplay Tags, and settings
+ */
+
+/**
+ * @defgroup LunarNavigationEditor Editor Integration
+ * @ingroup LunarNavigation
+ * @brief Details customization and native UMG navigation validation fixes
+ */
+
+/**
  * @defgroup LunarFLGame Game
  * @ingroup LunarFunctionLibraries
  * @brief Game and platform helper functions

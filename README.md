@@ -48,6 +48,18 @@ Subsystems are persistent runtime services used by the plugin and exposed to Blu
 
 [Raw Input Subsystem](https://qtullu.github.io/Lunar/group___lunar_raw_input_subsystem.html) tracks raw input state detects the last active input device stores key mouse and wheel input snapshots and broadcasts raw input events
 
+### UI Navigation
+
+The runtime UI navigation foundation provides a per-local-player `ULunarNavigationSubsystem`, non-visual scope stacks, authoritative Lunar Selection, Raw Input routing, deterministic directional links and fallback, and shared presentation contracts
+
+The public C++ control set includes Button, Slider, OptionSlider, Switch, Radio and Radio Group, ScrollBox, ListView, ComboBox, ContextMenu, Tabs, and Tab Header. Prompt receiver, input icon-set, semantic action-registry, and strongly typed style Data Asset classes are also available
+
+Blueprint composition, Data Asset instances, existing `W_*` reparenting, screenshots, and manual mouse, keyboard, Xbox, PlayStation 5, touch, gameplay-isolation, and accessibility verification remain owner work. `ULunarDraggableWindow` remains unchanged and outside the navigation hierarchy
+
+- [UI Navigation specification](docs/UI_NAVIGATION_SPEC.md)
+- [UI Navigation owner handoff and pending verification matrix](docs/UI_NAVIGATION_OWNER_HANDOFF.md)
+- [W_Button owner handoff](docs/UI_BUTTON_OWNER_HANDOFF.md)
+
 ---
 
 ## Components
@@ -170,13 +182,15 @@ Types contain shared enums structs settings records snapshots and data definitio
 
 [Plugin Settings](https://qtullu.github.io/Lunar/group___lunar_settings.html) stores project level Lunar settings exposed through Unreal Developer Settings
 
-The settings currently configure Lunar console defaults and Lunar performance monitoring defaults
+The settings currently configure Lunar console defaults Lunar performance monitoring defaults and UI navigation input behavior styles feedback prompts accessibility and diagnostics defaults
 
 ---
 
 ## Widgets
 
 [Draggable Window](https://qtullu.github.io/Lunar/group___lunar_widgets.html) is a reusable draggable and resizable UMG window widget with bounds resize modes handle states and movement events
+
+The Lunar UI navigation runtime exposes `ULunarScreenWidget` and `ULunarNavigableWidget` plus specialized Button Slider OptionSlider Switch Radio ScrollBox ListView ComboBox ContextMenu Tabs and Tab Header classes. Owner-created Blueprint subclasses provide the visual composition and Content assets
 
 ---
 

@@ -104,6 +104,30 @@ Subsystems are persistent runtime services used by the plugin and exposed to Blu
 
 
 
+@subsection lunar\_ui\_navigation\_subsystem UI Navigation
+
+
+
+@ref ULunarNavigationSubsystem is the per-local-player runtime authority for Lunar Selection scope stacks native focus input routing deterministic navigation prompt resolution feedback and diagnostics
+
+
+
+@ref ULunarScreenWidget owns an automatically managed screen scope and @ref ULunarNavigableWidget provides the shared selection presentation prompt feedback pointer and accessibility contract used by the specialized controls
+
+
+
+The public control set includes @ref ULunarButton @ref ULunarSlider @ref ULunarOptionSlider @ref ULunarSwitch @ref ULunarRadio @ref ULunarRadioGroup @ref ULunarScrollBox @ref ULunarListView @ref ULunarComboBox @ref ULunarContextMenu @ref ULunarTabs and @ref ULunarTabHeader
+
+
+
+Prompt presentation is provided by @ref ILunarInputPromptReceiver and @ref ULunarInputPromptWidget. @ref ULunarUIActionRegistry stores semantic action definitions, @ref ULunarInputIconSet maps resolved keys to brushes, and the typed @c ULunar*StyleAsset data assets provide inherited control presentation without hard-coded Content paths
+
+
+
+The complete design and phase contract is in [UI Navigation specification](UI_NAVIGATION_SPEC.md). Blueprint and Data Asset integration plus the still-pending device matrix are in [UI Navigation owner handoff](UI_NAVIGATION_OWNER_HANDOFF.md), with the existing button migration isolated in [W_Button owner handoff](UI_BUTTON_OWNER_HANDOFF.md)
+
+
+
 @htmlonly
 
 <hr class="lunar-section-divider">
@@ -464,7 +488,7 @@ Types contain shared enums structs settings records snapshots and data definitio
 
 
 
-The settings currently configure Lunar console defaults and Lunar performance monitoring defaults
+The settings currently configure Lunar console defaults Lunar performance monitoring defaults and UI navigation input behavior styles feedback prompts accessibility and diagnostics defaults
 
 
 
@@ -481,6 +505,14 @@ The settings currently configure Lunar console defaults and Lunar performance mo
 
 
 @ref LunarDraggableWindow is a reusable draggable and resizable UMG window widget with bounds resize modes handle states and movement events
+
+
+
+The UI navigation runtime exposes @ref ULunarButton @ref ULunarSlider @ref ULunarOptionSlider @ref ULunarSwitch @ref ULunarRadio @ref ULunarScrollBox @ref ULunarListView @ref ULunarComboBox @ref ULunarContextMenu @ref ULunarTabs and @ref ULunarTabHeader
+
+
+
+Owner-created Blueprint subclasses provide visual composition and Data Asset instances. Existing Content is not reparented or edited by the C++ implementation pass and manual mouse keyboard Xbox PlayStation 5 touch gameplay-isolation and accessibility verification remains pending until owner Content integration
 
 
 

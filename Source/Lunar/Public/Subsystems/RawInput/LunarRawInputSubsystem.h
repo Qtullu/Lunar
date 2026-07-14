@@ -15,11 +15,11 @@
  */
 
 class FLunarRawInputProcessor;
-
-/**
- * @brief Called when last input device changes
- */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarInputDeviceChangedSignature, ELunarInputDeviceType, NewInputDevice);
+class ULocalPlayer;
+struct FAnalogInputEvent;
+struct FInputEvent;
+struct FKeyEvent;
+struct FPointerEvent;
 
 /**
  * @brief Called when a raw key event occurs
@@ -219,6 +219,57 @@ public:
 
 public:
 	/**
+	 * @brief Records and routes a complete raw key-down event
+	 * @param KeyEvent Key-down event including its player and device identity
+	 * @return True when Lunar navigation consumed the event
+	 */
+	bool HandleKeyDown(const FKeyEvent& KeyEvent);
+
+	/**
+	 * @brief Records and routes a complete raw key-up event
+	 * @param KeyEvent Key-up event including its player and device identity
+	 * @return True when Lunar navigation consumed the event
+	 */
+	bool HandleKeyUp(const FKeyEvent& KeyEvent);
+
+	/**
+	 * @brief Records and routes a complete raw analog input event
+	 * @param AnalogEvent Analog event including its player and device identity
+	 * @return True when Lunar navigation consumed the event
+	 */
+	bool HandleAnalogInput(const FAnalogInputEvent& AnalogEvent);
+
+	/**
+	 * @brief Records and routes a complete raw pointer-move event
+	 * @param PointerEvent Pointer-move event including its player and device identity
+	 */
+	void HandleMouseMove(const FPointerEvent& PointerEvent);
+
+	/**
+	 * @brief Records and routes a complete raw pointer-button-down event
+	 * @param PointerEvent Pointer-button event including its player and device identity
+	 */
+	void HandleMouseButtonDown(const FPointerEvent& PointerEvent);
+
+	/**
+	 * @brief Records and routes a complete raw pointer-button-up event
+	 * @param PointerEvent Pointer-button event including its player and device identity
+	 */
+	void HandleMouseButtonUp(const FPointerEvent& PointerEvent);
+
+	/**
+	 * @brief Records and routes a complete raw pointer-wheel event
+	 * @param PointerEvent Pointer-wheel event including its player and device identity
+	 */
+	void HandleMouseWheel(const FPointerEvent& PointerEvent);
+
+	/**
+	 * @brief Notifies the owning player's navigation context about pointer activity
+	 * @param PointerEvent Pointer event including its player and device identity
+	 */
+	void NotifyPointerInput(const FPointerEvent& PointerEvent);
+
+	/**
 	 * @brief Handles raw key down event
 	 * @param Key Pressed key
 	 */
@@ -234,31 +285,67 @@ public:
 	 * @brief Handles raw mouse move event
 	 * @param ScreenPosition Mouse screen position
 	 * @param CursorDelta Mouse cursor delta
+	 * @param InputDevice Classified source device for this pointer event
 	 */
-	void HandleMouseMove(const FVector2D& ScreenPosition, const FVector2D& CursorDelta);
+	void HandleMouseMove(const FVector2D& ScreenPosition, const FVector2D& CursorDelta,
+		ELunarInputDeviceType InputDevice = ELunarInputDeviceType::KeyboardMouse);
 
 	/**
 	 * @brief Handles raw mouse button down event
 	 * @param Key Pressed mouse button
 	 * @param ScreenPosition Mouse screen position
+	 * @param InputDevice Classified source device for this pointer event
 	 */
-	void HandleMouseButtonDown(const FKey& Key, const FVector2D& ScreenPosition);
+	void HandleMouseButtonDown(const FKey& Key, const FVector2D& ScreenPosition,
+		ELunarInputDeviceType InputDevice = ELunarInputDeviceType::KeyboardMouse);
 
 	/**
 	 * @brief Handles raw mouse button up event
 	 * @param Key Released mouse button
 	 * @param ScreenPosition Mouse screen position
+	 * @param InputDevice Classified source device for this pointer event
 	 */
-	void HandleMouseButtonUp(const FKey& Key, const FVector2D& ScreenPosition);
+	void HandleMouseButtonUp(const FKey& Key, const FVector2D& ScreenPosition,
+		ELunarInputDeviceType InputDevice = ELunarInputDeviceType::KeyboardMouse);
 
 	/**
 	 * @brief Handles raw mouse wheel event
 	 * @param WheelDelta Mouse wheel delta
 	 * @param ScreenPosition Mouse screen position
+	 * @param InputDevice Classified source device for this pointer event
 	 */
-	void HandleMouseWheel(float WheelDelta, const FVector2D& ScreenPosition);
+	void HandleMouseWheel(float WheelDelta, const FVector2D& ScreenPosition,
+		ELunarInputDeviceType InputDevice = ELunarInputDeviceType::KeyboardMouse);
 
 private:
+	/**
+	 * @brief Resolves the local player that owns an input event
+	 * @param InputEvent Input event to resolve
+	 * @return Owning local player, or null when the event cannot be assigned safely
+	 */
+	ULocalPlayer* ResolveOwningLocalPlayer(const FInputEvent& InputEvent) const;
+
+	/**
+	 * @brief Records the local-player and Slate-user identity of a routed event
+	 * @param LocalPlayer Local player resolved for the event, or null when unresolved
+	 * @param SlateUserIndex Slate user index carried by the event
+	 */
+	void RecordInputOwner(ULocalPlayer* LocalPlayer, uint32 SlateUserIndex);
+
+	/**
+	 * @brief Records a key-down transition using an explicit device classification
+	 * @param Key Pressed input key
+	 * @param InputDevice Device category that produced the key event
+	 */
+	void HandleKeyDownForDevice(const FKey& Key, ELunarInputDeviceType InputDevice);
+
+	/**
+	 * @brief Records a key-up transition using an explicit device classification
+	 * @param Key Released input key
+	 * @param InputDevice Device category that produced the key event
+	 */
+	void HandleKeyUpForDevice(const FKey& Key, ELunarInputDeviceType InputDevice);
+
 	/**
 	 * @brief Sets last detected input device
 	 * @param NewInputDevice New input device

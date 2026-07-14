@@ -3,6 +3,7 @@
 #include "Components/AutoRotator/LunarAutoRotatorComponent.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/AutoRotator/LunarAutoRotatorEditorBridge.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -10,11 +11,6 @@
 #include "Misc/App.h"
 #include "NativeGameplayTags.h"
 #include "Subsystems/Console/LunarConsoleSubsystem.h"
-
-#if WITH_EDITOR
-#include "Editor.h"
-#include "LevelEditorViewport.h"
-#endif
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Lunar_AutoRotator, "Lunar.AutoRotator");
 
@@ -403,13 +399,14 @@ bool ULunarAutoRotatorComponent::ResolvePlayerCameraLocation(FVector& OutCameraL
 #if WITH_EDITOR
 	if (!World->IsGameWorld())
 	{
-		if (!GCurrentLevelEditingViewportClient)
+		FLunarResolveEditorViewportCameraLocation& EditorCameraResolver = GetLunarResolveEditorViewportCameraLocationDelegate();
+
+		if (!EditorCameraResolver.IsBound() || !EditorCameraResolver.Execute(OutCameraLocation))
 		{
 			ReportErrorOnce(FString::Printf(TEXT("%s on actor '%s' failed: active level editor viewport camera is unavailable."), *GetNameSafe(this), *GetNameSafe(GetOwner())));
 			return false;
 		}
 
-		OutCameraLocation = GCurrentLevelEditingViewportClient->GetViewLocation();
 		return true;
 	}
 #endif

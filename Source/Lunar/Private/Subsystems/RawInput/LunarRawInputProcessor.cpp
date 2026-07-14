@@ -6,6 +6,12 @@
 #include "Input/Events.h"
 #include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
+/**
+ * @file LunarRawInputProcessor.cpp
+ * @brief Slate input forwarding for the Lunar raw-input and navigation systems
+ * @ingroup LunarRawInputSubsystem
+ */
+
 FLunarRawInputProcessor::FLunarRawInputProcessor(TWeakObjectPtr<ULunarRawInputSubsystem> InSubsystem)
 	: Subsystem(InSubsystem)
 {
@@ -19,7 +25,7 @@ bool FLunarRawInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, co
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleKeyDown(InKeyEvent.GetKey());
+		return RawInputSubsystem->HandleKeyDown(InKeyEvent);
 	}
 
 	return false;
@@ -29,7 +35,17 @@ bool FLunarRawInputProcessor::HandleKeyUpEvent(FSlateApplication& SlateApp, cons
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleKeyUp(InKeyEvent.GetKey());
+		return RawInputSubsystem->HandleKeyUp(InKeyEvent);
+	}
+
+	return false;
+}
+
+bool FLunarRawInputProcessor::HandleAnalogInputEvent(FSlateApplication& SlateApp, const FAnalogInputEvent& InAnalogInputEvent)
+{
+	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
+	{
+		return RawInputSubsystem->HandleAnalogInput(InAnalogInputEvent);
 	}
 
 	return false;
@@ -39,7 +55,7 @@ bool FLunarRawInputProcessor::HandleMouseMoveEvent(FSlateApplication& SlateApp, 
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleMouseMove(MouseEvent.GetScreenSpacePosition(), MouseEvent.GetCursorDelta());
+		RawInputSubsystem->HandleMouseMove(MouseEvent);
 	}
 
 	return false;
@@ -49,7 +65,7 @@ bool FLunarRawInputProcessor::HandleMouseButtonDownEvent(FSlateApplication& Slat
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleMouseButtonDown(MouseEvent.GetEffectingButton(), MouseEvent.GetScreenSpacePosition());
+		RawInputSubsystem->HandleMouseButtonDown(MouseEvent);
 	}
 
 	return false;
@@ -59,7 +75,7 @@ bool FLunarRawInputProcessor::HandleMouseButtonUpEvent(FSlateApplication& SlateA
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleMouseButtonUp(MouseEvent.GetEffectingButton(), MouseEvent.GetScreenSpacePosition());
+		RawInputSubsystem->HandleMouseButtonUp(MouseEvent);
 	}
 
 	return false;
@@ -69,7 +85,7 @@ bool FLunarRawInputProcessor::HandleMouseWheelOrGestureEvent(FSlateApplication& 
 {
 	if (ULunarRawInputSubsystem* RawInputSubsystem = Subsystem.Get())
 	{
-		RawInputSubsystem->HandleMouseWheel(MouseEvent.GetWheelDelta(), MouseEvent.GetScreenSpacePosition());
+		RawInputSubsystem->HandleMouseWheel(MouseEvent);
 	}
 
 	return false;

@@ -2,8 +2,18 @@
 
 #include "Subsystems/RawInput/LunarRawInputSubsystem.h"
 
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Input/Events.h"
 #include "Subsystems/RawInput/LunarRawInputProcessor.h"
+#include "UI/Navigation/Core/LunarNavigationSubsystem.h"
+
+/**
+ * @file LunarRawInputSubsystem.cpp
+ * @brief Raw Slate input capture, player attribution, and Lunar navigation routing
+ * @ingroup LunarRawInputSubsystem
+ */
 
 void ULunarRawInputSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -147,9 +157,130 @@ void ULunarRawInputSubsystem::ClearInputState()
 	Snapshot.RawMouseDelta = FVector2D::ZeroVector;
 	Snapshot.MouseWheelDelta = 0.0f;
 	Snapshot.LastKey = EKeys::Invalid;
+	Snapshot.LastLocalPlayerIndex = INDEX_NONE;
+	Snapshot.LastSlateUserIndex = INDEX_NONE;
 
 	PreviousMousePosition = FVector2D::ZeroVector;
 	bHasPreviousMousePosition = false;
+}
+
+bool ULunarRawInputSubsystem::HandleKeyDown(const FKeyEvent& KeyEvent)
+{
+	ULocalPlayer* LocalPlayer = ResolveOwningLocalPlayer(KeyEvent);
+	RecordInputOwner(LocalPlayer, KeyEvent.GetUserIndex());
+	HandleKeyDown(KeyEvent.GetKey());
+
+	if (LocalPlayer)
+	{
+		if (ULunarNavigationSubsystem* NavigationSubsystem = LocalPlayer->GetSubsystem<ULunarNavigationSubsystem>())
+		{
+			return NavigationSubsystem->HandleNavigationKeyDown(KeyEvent);
+		}
+	}
+
+	return false;
+}
+
+bool ULunarRawInputSubsystem::HandleKeyUp(const FKeyEvent& KeyEvent)
+{
+	ULocalPlayer* LocalPlayer = ResolveOwningLocalPlayer(KeyEvent);
+	RecordInputOwner(LocalPlayer, KeyEvent.GetUserIndex());
+	HandleKeyUp(KeyEvent.GetKey());
+
+	if (LocalPlayer)
+	{
+		if (ULunarNavigationSubsystem* NavigationSubsystem = LocalPlayer->GetSubsystem<ULunarNavigationSubsystem>())
+		{
+			return NavigationSubsystem->HandleNavigationKeyUp(KeyEvent);
+		}
+	}
+
+	return false;
+}
+
+bool ULunarRawInputSubsystem::HandleAnalogInput(const FAnalogInputEvent& AnalogEvent)
+{
+	const FKey Key = AnalogEvent.GetKey();
+	const ELunarInputDeviceType InputDevice = Key.IsGamepadKey()
+		? ELunarInputDeviceType::Gamepad
+		: ELunarInputDeviceType::KeyboardMouse;
+
+	ULocalPlayer* LocalPlayer = ResolveOwningLocalPlayer(AnalogEvent);
+	RecordInputOwner(LocalPlayer, AnalogEvent.GetUserIndex());
+	MarkInputReceived(InputDevice, Key);
+
+	if (LocalPlayer)
+	{
+		if (ULunarNavigationSubsystem* NavigationSubsystem = LocalPlayer->GetSubsystem<ULunarNavigationSubsystem>())
+		{
+			return NavigationSubsystem->HandleNavigationAnalog(AnalogEvent);
+		}
+	}
+
+	return false;
+}
+
+void ULunarRawInputSubsystem::HandleMouseMove(const FPointerEvent& PointerEvent)
+{
+	RecordInputOwner(ResolveOwningLocalPlayer(PointerEvent), PointerEvent.GetUserIndex());
+	const ELunarInputDeviceType InputDevice = PointerEvent.IsTouchEvent()
+		? ELunarInputDeviceType::Touch
+		: ELunarInputDeviceType::KeyboardMouse;
+	HandleMouseMove(PointerEvent.GetScreenSpacePosition(), PointerEvent.GetCursorDelta(), InputDevice);
+
+	if (!PointerEvent.GetCursorDelta().IsNearlyZero())
+	{
+		NotifyPointerInput(PointerEvent);
+	}
+}
+
+void ULunarRawInputSubsystem::HandleMouseButtonDown(const FPointerEvent& PointerEvent)
+{
+	RecordInputOwner(ResolveOwningLocalPlayer(PointerEvent), PointerEvent.GetUserIndex());
+	const ELunarInputDeviceType InputDevice = PointerEvent.IsTouchEvent()
+		? ELunarInputDeviceType::Touch
+		: ELunarInputDeviceType::KeyboardMouse;
+	HandleMouseButtonDown(PointerEvent.GetEffectingButton(), PointerEvent.GetScreenSpacePosition(), InputDevice);
+	NotifyPointerInput(PointerEvent);
+}
+
+void ULunarRawInputSubsystem::HandleMouseButtonUp(const FPointerEvent& PointerEvent)
+{
+	RecordInputOwner(ResolveOwningLocalPlayer(PointerEvent), PointerEvent.GetUserIndex());
+	const ELunarInputDeviceType InputDevice = PointerEvent.IsTouchEvent()
+		? ELunarInputDeviceType::Touch
+		: ELunarInputDeviceType::KeyboardMouse;
+	HandleMouseButtonUp(PointerEvent.GetEffectingButton(), PointerEvent.GetScreenSpacePosition(), InputDevice);
+	NotifyPointerInput(PointerEvent);
+}
+
+void ULunarRawInputSubsystem::HandleMouseWheel(const FPointerEvent& PointerEvent)
+{
+	RecordInputOwner(ResolveOwningLocalPlayer(PointerEvent), PointerEvent.GetUserIndex());
+	const ELunarInputDeviceType InputDevice = PointerEvent.IsTouchEvent()
+		? ELunarInputDeviceType::Touch
+		: ELunarInputDeviceType::KeyboardMouse;
+	HandleMouseWheel(PointerEvent.GetWheelDelta(), PointerEvent.GetScreenSpacePosition(), InputDevice);
+
+	if (!FMath::IsNearlyZero(PointerEvent.GetWheelDelta()))
+	{
+		NotifyPointerInput(PointerEvent);
+	}
+}
+
+void ULunarRawInputSubsystem::NotifyPointerInput(const FPointerEvent& PointerEvent)
+{
+	if (ULocalPlayer* LocalPlayer = ResolveOwningLocalPlayer(PointerEvent))
+	{
+		if (ULunarNavigationSubsystem* NavigationSubsystem = LocalPlayer->GetSubsystem<ULunarNavigationSubsystem>())
+		{
+			const ELunarInputDeviceType InputDevice = PointerEvent.IsTouchEvent()
+				? ELunarInputDeviceType::Touch
+				: ELunarInputDeviceType::KeyboardMouse;
+
+			NavigationSubsystem->NotifyPointerInput(InputDevice);
+		}
+	}
 }
 
 void ULunarRawInputSubsystem::HandleKeyDown(const FKey& Key)
@@ -157,7 +288,11 @@ void ULunarRawInputSubsystem::HandleKeyDown(const FKey& Key)
 	const ELunarInputDeviceType InputDevice = Key.IsGamepadKey()
 		? ELunarInputDeviceType::Gamepad
 		: ELunarInputDeviceType::KeyboardMouse;
+	HandleKeyDownForDevice(Key, InputDevice);
+}
 
+void ULunarRawInputSubsystem::HandleKeyDownForDevice(const FKey& Key, const ELunarInputDeviceType InputDevice)
+{
 	MarkInputReceived(InputDevice, Key);
 
 	if (!DownKeys.Contains(Key))
@@ -174,7 +309,11 @@ void ULunarRawInputSubsystem::HandleKeyUp(const FKey& Key)
 	const ELunarInputDeviceType InputDevice = Key.IsGamepadKey()
 		? ELunarInputDeviceType::Gamepad
 		: ELunarInputDeviceType::KeyboardMouse;
+	HandleKeyUpForDevice(Key, InputDevice);
+}
 
+void ULunarRawInputSubsystem::HandleKeyUpForDevice(const FKey& Key, const ELunarInputDeviceType InputDevice)
+{
 	MarkInputReceived(InputDevice, Key);
 
 	const bool bWasDown = DownKeys.Contains(Key);
@@ -190,7 +329,10 @@ void ULunarRawInputSubsystem::HandleKeyUp(const FKey& Key)
 	DownKeys.Remove(Key);
 }
 
-void ULunarRawInputSubsystem::HandleMouseMove(const FVector2D& ScreenPosition, const FVector2D& CursorDelta)
+void ULunarRawInputSubsystem::HandleMouseMove(
+	const FVector2D& ScreenPosition,
+	const FVector2D& CursorDelta,
+	const ELunarInputDeviceType InputDevice)
 {
 	FVector2D RawDelta = FVector2D::ZeroVector;
 
@@ -212,30 +354,39 @@ void ULunarRawInputSubsystem::HandleMouseMove(const FVector2D& ScreenPosition, c
 
 	if (!CursorDelta.IsNearlyZero() || !RawDelta.IsNearlyZero())
 	{
-		MarkInputReceived(ELunarInputDeviceType::KeyboardMouse);
+		MarkInputReceived(InputDevice);
 		OnMouseMoved.Broadcast(ScreenPosition, RawDelta);
 	}
 }
 
-void ULunarRawInputSubsystem::HandleMouseButtonDown(const FKey& Key, const FVector2D& ScreenPosition)
+void ULunarRawInputSubsystem::HandleMouseButtonDown(
+	const FKey& Key,
+	const FVector2D& ScreenPosition,
+	const ELunarInputDeviceType InputDevice)
 {
 	Snapshot.MousePosition = ScreenPosition;
 	PreviousMousePosition = ScreenPosition;
 	bHasPreviousMousePosition = true;
 
-	HandleKeyDown(Key);
+	HandleKeyDownForDevice(Key, InputDevice);
 }
 
-void ULunarRawInputSubsystem::HandleMouseButtonUp(const FKey& Key, const FVector2D& ScreenPosition)
+void ULunarRawInputSubsystem::HandleMouseButtonUp(
+	const FKey& Key,
+	const FVector2D& ScreenPosition,
+	const ELunarInputDeviceType InputDevice)
 {
 	Snapshot.MousePosition = ScreenPosition;
 	PreviousMousePosition = ScreenPosition;
 	bHasPreviousMousePosition = true;
 
-	HandleKeyUp(Key);
+	HandleKeyUpForDevice(Key, InputDevice);
 }
 
-void ULunarRawInputSubsystem::HandleMouseWheel(float WheelDelta, const FVector2D& ScreenPosition)
+void ULunarRawInputSubsystem::HandleMouseWheel(
+	const float WheelDelta,
+	const FVector2D& ScreenPosition,
+	const ELunarInputDeviceType InputDevice)
 {
 	Snapshot.MousePosition = ScreenPosition;
 	PreviousMousePosition = ScreenPosition;
@@ -245,9 +396,47 @@ void ULunarRawInputSubsystem::HandleMouseWheel(float WheelDelta, const FVector2D
 
 	if (!FMath::IsNearlyZero(WheelDelta))
 	{
-		MarkInputReceived(ELunarInputDeviceType::KeyboardMouse);
+		MarkInputReceived(InputDevice);
 		OnMouseWheel.Broadcast(WheelDelta, ScreenPosition);
 	}
+}
+
+ULocalPlayer* ULunarRawInputSubsystem::ResolveOwningLocalPlayer(const FInputEvent& InputEvent) const
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return nullptr;
+	}
+
+	const FPlatformUserId PlatformUserId = InputEvent.GetPlatformUserId();
+	if (PlatformUserId.IsValid())
+	{
+		if (ULocalPlayer* LocalPlayer = GameInstance->FindLocalPlayerFromPlatformUserId(PlatformUserId))
+		{
+			return LocalPlayer;
+		}
+	}
+
+	const uint32 UserIndex = InputEvent.GetUserIndex();
+	if (UserIndex <= static_cast<uint32>(MAX_int32))
+	{
+		if (ULocalPlayer* LocalPlayer = GameInstance->GetLocalPlayerByIndex(static_cast<int32>(UserIndex)))
+		{
+			return LocalPlayer;
+		}
+	}
+
+	const TArray<ULocalPlayer*>& LocalPlayers = GameInstance->GetLocalPlayers();
+	return LocalPlayers.Num() == 1 ? LocalPlayers[0] : nullptr;
+}
+
+void ULunarRawInputSubsystem::RecordInputOwner(ULocalPlayer* LocalPlayer, const uint32 SlateUserIndex)
+{
+	Snapshot.LastLocalPlayerIndex = LocalPlayer ? LocalPlayer->GetLocalPlayerIndex() : INDEX_NONE;
+	Snapshot.LastSlateUserIndex = SlateUserIndex <= static_cast<uint32>(MAX_int32)
+		? static_cast<int32>(SlateUserIndex)
+		: INDEX_NONE;
 }
 
 void ULunarRawInputSubsystem::SetLastInputDevice(ELunarInputDeviceType NewInputDevice)

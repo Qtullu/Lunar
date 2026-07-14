@@ -6,6 +6,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "Subsystems/Console/LunarTypesConsole.h"
 #include "Subsystems/Performance/LunarTypesPerformance.h"
+#include "UI/Navigation/Types/LunarNavigationSettings.h"
 #include "LunarSettings.generated.h"
 
 /**
@@ -50,6 +51,10 @@ public:
 	/** Lunar console default settings */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Console", meta = (DisplayName = "Console Settings", ToolTip = "Lunar Console default settings."))
 	FLunarConsoleSettings Console;
+
+	/** @brief Lunar UI navigation defaults. */
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "UI Navigation", meta = (DisplayName = "Navigation", ToolTip = "Lunar UI Navigation System defaults."))
+	FLunarNavigationSettings Navigation;
 
 	/**
 	 * @brief Gets default Lunar project settings
