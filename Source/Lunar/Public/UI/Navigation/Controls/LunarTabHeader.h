@@ -29,19 +29,19 @@ public:
 	ULunarTabHeader(const FObjectInitializer& ObjectInitializer);
 
 	/** Returns the stable ID represented by this header. @return Stable tab ID. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Tabs")
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	FName GetTabId() const { return TabId; }
 
 	/** Returns the Tabs control that generated this header. @return Owning Tabs, or null before initialization. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Tabs")
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	ULunarTabs* GetTabsOwner() const { return TabsOwner; }
 
 	/** Stable tab ID assigned by the owning Tabs control. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	FName TabId = NAME_None;
 
 	/** Tabs control that owns routing, activation, and presentation for this header. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	TObjectPtr<ULunarTabs> TabsOwner = nullptr;
 
 protected:
@@ -55,14 +55,10 @@ protected:
 	virtual void NativeOnLunarActivated() override;
 	/** Returns the active/inactive state for accessibility. @return Localized accessible value. */
 	virtual FText NativeGetLunarAccessibleValueText() const override;
-	/** Delegates header style resolution to the owning Tabs control. @param OutStyle Resolved common patch. @param OutError Actionable failure text. @return True on success. */
-	virtual bool ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const override;
-	/** Delegates common and indicator presentation to the owning Tabs control. @param ResolvedStyle Resolved common style. */
-	virtual void ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle) override;
 
 private:
-	/** Initializes the generated header. @param InTabsOwner Owning Tabs. @param InTabId Stable tab ID. @param bInEnabled Enabled state. @param InDisabledReason Localized disabled explanation. */
-	void InitializeTabHeader(ULunarTabs* InTabsOwner, FName InTabId, bool bInEnabled, const FText& InDisabledReason);
+	/** Initializes the generated header. @param InTabsOwner Owning Tabs. @param InTabId Stable tab ID. @param bInEnabled Enabled state. @param InDisabledReason Non-localized disabled explanation. */
+	void InitializeTabHeader(ULunarTabs* InTabsOwner, FName InTabId, bool bInEnabled, const FString& InDisabledReason);
 	/** Updates the independent active-page visual flag. @param bInActive Whether this header owns the active page. */
 	void SetActiveTabHeader(bool bInActive);
 	/** Requests owner activation for this header's tab. @return True on success. */

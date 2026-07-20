@@ -2,18 +2,16 @@
 
 /**
  * @file LunarContextMenu.cpp
- * @brief Implements nested scope ownership, outside-pointer dismissal, and popup styling.
+ * @brief Implements nested scope ownership, outside-pointer dismissal, and popup lifetime.
  * @ingroup LunarNavigationControls
  */
 
 #include "UI/Navigation/Controls/LunarContextMenu.h"
 
-#include "Components/Border.h"
-#include "Components/Image.h"
+#include "Components/PanelWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "UI/Navigation/Core/LunarNavigationScope.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
 
 /** Private log channel for ContextMenu diagnostics. */
 DEFINE_LOG_CATEGORY_STATIC(LogLunarContextMenu, Log, All);
@@ -139,7 +137,7 @@ bool ULunarContextMenu::OpenContextMenu()
 	}
 
 	bContextMenuOpen = true;
-	OnContextMenuOpened.Broadcast();
+	OnContextMenuOpened.Broadcast(this);
 
 	const bool bShouldClose = bCloseRequestedWhileOpening;
 	bCloseRequestedWhileOpening = false;
@@ -223,9 +221,6 @@ bool ULunarContextMenu::SetContextMenuPopupWidget(UWidget* NewPopupWidget)
 	if (ContextMenuPopupWidget != NewPopupWidget)
 	{
 		ContextMenuPopupWidget = NewPopupWidget;
-		ResetPopupBrushBaseline();
-		bHasPresentedContextMenuStyle = false;
-		RefreshVisualState();
 	}
 	return true;
 }
@@ -235,11 +230,6 @@ bool ULunarContextMenu::HandleContextMenuOutsidePointer()
 	return bContextMenuOpen
 		&& IsOurScopeTop(ResolveContextMenuNavigationSubsystem())
 		&& CloseContextMenu();
-}
-
-FLunarContextMenuStylePatch ULunarContextMenu::GetResolvedContextMenuStyle() const
-{
-	return ResolvedContextMenuStyle;
 }
 
 void ULunarContextMenu::NativeConstruct()
@@ -295,7 +285,6 @@ void ULunarContextMenu::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 	ApplyRuntimePolicies();
-	ApplyResolvedContextMenuStyle();
 }
 
 FReply ULunarContextMenu::NativeOnPreviewMouseButtonDown(
@@ -324,31 +313,6 @@ FReply ULunarContextMenu::NativeOnTouchStarted(
 		return FReply::Handled();
 	}
 	return Super::NativeOnTouchStarted(InGeometry, InGestureEvent);
-}
-
-bool ULunarContextMenu::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	FLunarContextMenuStylePatch ResolvedStyle;
-	if (!LunarStyleResolver::ResolveContextMenuStyle(
-		StyleAsset,
-		GetLunarVisualState(),
-		StyleOverrides,
-		ResolvedStyle,
-		&OutError))
-	{
-		return false;
-	}
-
-	ULunarContextMenu* MutableThis = const_cast<ULunarContextMenu*>(this);
-	MutableThis->ResolvedContextMenuStyle = ResolvedStyle;
-	OutStyle = ResolvedStyle.Common;
-	return true;
-}
-
-void ULunarContextMenu::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	Super::ApplyResolvedCommonStyle(ResolvedStyle);
-	ApplyResolvedContextMenuStyle();
 }
 
 void ULunarContextMenu::HandleActiveScopeChanged(
@@ -488,77 +452,13 @@ void ULunarContextMenu::FinalizeContextMenuClosed(ULunarNavigationSubsystem* Nav
 		NavigationSubsystem->ResetSelection();
 	}
 
-	OnContextMenuClosed.Broadcast();
-}
-
-void ULunarContextMenu::ApplyResolvedContextMenuStyle()
-{
-	UWidget* PopupWidget = ResolvePopupWidget();
-	if (PopupWidget
-		&& PopupWidget != this
-		&& (PopupWidget->IsA<UBorder>() || PopupWidget->IsA<UImage>()))
-	{
-		if (const TSharedPtr<SWidget> PopupSlateWidget = PopupWidget->GetCachedWidget())
-		{
-			// Panel art is decorative; the ContextMenu summary and item controls carry meaning.
-			PopupSlateWidget->SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
-		}
-	}
-	if (PopupBrushBaselineOwner != PopupWidget)
-	{
-		ResetPopupBrushBaseline();
-		PopupBrushBaselineOwner = PopupWidget;
-		if (const UImage* PopupImage = Cast<UImage>(PopupWidget))
-		{
-			PopupBrushBaseline = PopupImage->GetBrush();
-			bHasPopupBrushBaseline = true;
-		}
-		else if (const UBorder* PopupBorder = Cast<UBorder>(PopupWidget))
-		{
-			PRAGMA_DISABLE_DEPRECATION_WARNINGS
-			PopupBrushBaseline = PopupBorder->Background;
-			PRAGMA_ENABLE_DEPRECATION_WARNINGS
-			bHasPopupBrushBaseline = true;
-		}
-	}
-
-	const FSlateBrush* PanelBrush = ResolvedContextMenuStyle.bOverridePanelBrush
-		? &ResolvedContextMenuStyle.PanelBrush
-		: (bHasPopupBrushBaseline ? &PopupBrushBaseline : nullptr);
-	if (PanelBrush)
-	{
-		if (UImage* PopupImage = Cast<UImage>(PopupWidget))
-		{
-			PopupImage->SetBrush(*PanelBrush);
-		}
-		else if (UBorder* PopupBorder = Cast<UBorder>(PopupWidget))
-		{
-			PopupBorder->SetBrush(*PanelBrush);
-		}
-	}
-
-	if (!bHasPresentedContextMenuStyle
-		|| !FLunarContextMenuStylePatch::StaticStruct()->CompareScriptStruct(
-			&LastPresentedContextMenuStyle,
-			&ResolvedContextMenuStyle,
-			0))
-	{
-		LastPresentedContextMenuStyle = ResolvedContextMenuStyle;
-		bHasPresentedContextMenuStyle = true;
-		BP_OnContextMenuStyleResolved(ResolvedContextMenuStyle);
-	}
-}
-
-void ULunarContextMenu::ResetPopupBrushBaseline()
-{
-	PopupBrushBaselineOwner = nullptr;
-	PopupBrushBaseline = FSlateBrush();
-	bHasPopupBrushBaseline = false;
+	OnContextMenuClosed.Broadcast(this);
 }
 
 void ULunarContextMenu::ApplyRuntimePolicies()
 {
 	bCanReceiveLunarSelection = false;
 	bCanInteractWithPointer = false;
+	bAllowTouchInput = false;
 	SetIsFocusable(false);
 }

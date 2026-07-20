@@ -32,31 +32,25 @@
 #include "Kismet/GameplayStatics.h"
 #include "Settings/LunarSettings.h"
 #include "Subsystems/Console/LunarConsoleSubsystem.h"
+#include "UI/Navigation/Controls/LunarRadio.h"
 #include "UI/Navigation/Controls/LunarScrollBox.h"
 #include "UI/Navigation/Core/LunarNavigableWidget.h"
 #include "UI/Navigation/Core/LunarNavigationScope.h"
 #include "UI/Navigation/Core/LunarScreenWidget.h"
 #include "UI/Navigation/Data/LunarInputIconSet.h"
 #include "UI/Navigation/Data/LunarUIActionRegistry.h"
+#include "UI/Navigation/Data/LunarUIHapticFeedbackAsset.h"
+#include "UI/Navigation/Data/LunarUISoundFeedbackAsset.h"
 #include "UI/Navigation/Prompts/LunarInputPromptWidget.h"
-#include "UI/Navigation/Styles/LunarButtonStyleAsset.h"
-#include "UI/Navigation/Styles/LunarComboBoxStyleAsset.h"
-#include "UI/Navigation/Styles/LunarContextMenuStyleAsset.h"
-#include "UI/Navigation/Styles/LunarInputPromptStyleAsset.h"
-#include "UI/Navigation/Styles/LunarListViewStyleAsset.h"
-#include "UI/Navigation/Styles/LunarOptionSliderStyleAsset.h"
-#include "UI/Navigation/Styles/LunarRadioStyleAsset.h"
-#include "UI/Navigation/Styles/LunarScrollBoxStyleAsset.h"
-#include "UI/Navigation/Styles/LunarSliderStyleAsset.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
-#include "UI/Navigation/Styles/LunarSwitchStyleAsset.h"
-#include "UI/Navigation/Styles/LunarTabsStyleAsset.h"
-#include "UI/Navigation/Styles/LunarWidgetStyleAsset.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Input/SEditableText.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Text/SMultiLineEditableText.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLunarNavigation, Log, All);
 
@@ -95,6 +89,96 @@ namespace LunarNavigationSubsystem_Private
 		default:
 			return false;
 		}
+	}
+
+	/** @param Key Candidate gamepad key. @return True when the key mirrors one cardinal direction of the raw left-stick axes. */
+	bool IsLeftStickDirectionKey(const FKey& Key)
+	{
+		return Key == EKeys::Gamepad_LeftStick_Up
+			|| Key == EKeys::Gamepad_LeftStick_Down
+			|| Key == EKeys::Gamepad_LeftStick_Left
+			|| Key == EKeys::Gamepad_LeftStick_Right;
+	}
+
+	/** @param Key Candidate key. @return True for Shift or the left gamepad shoulder. */
+	bool IsRangeSelectionModifierKey(const FKey& Key)
+	{
+		return Key == EKeys::LeftShift
+			|| Key == EKeys::RightShift
+			|| Key == EKeys::Gamepad_LeftShoulder;
+	}
+
+	/** @param Key Candidate key. @return True for Control or the right gamepad shoulder. */
+	bool IsAdditiveSelectionModifierKey(const FKey& Key)
+	{
+		return Key == EKeys::LeftControl
+			|| Key == EKeys::RightControl
+			|| Key == EKeys::Gamepad_RightShoulder;
+	}
+
+	/**
+	 * Synchronizes keyboard selection modifiers from the modifier snapshot carried by a Slate key event.
+	 * Modifier-only key events are not guaranteed to reach every viewport input path, while the following
+	 * letter or direction event still carries the authoritative Shift/Control state.
+	 */
+	void SynchronizeKeyboardSelectionModifiers(
+		const FKeyEvent& KeyEvent,
+		TSet<FKey>& HeldSelectionModifierKeys,
+		const bool bTreatEventKeyAsPressed)
+	{
+		const FKey Key = KeyEvent.GetKey();
+		if (Key.IsGamepadKey())
+		{
+			return;
+		}
+
+		HeldSelectionModifierKeys.Remove(EKeys::LeftShift);
+		HeldSelectionModifierKeys.Remove(EKeys::RightShift);
+		HeldSelectionModifierKeys.Remove(EKeys::LeftControl);
+		HeldSelectionModifierKeys.Remove(EKeys::RightControl);
+
+		const bool bShiftKeyEvent = Key == EKeys::LeftShift || Key == EKeys::RightShift;
+		const bool bControlKeyEvent = Key == EKeys::LeftControl || Key == EKeys::RightControl;
+		if (KeyEvent.IsShiftDown() || (bTreatEventKeyAsPressed && bShiftKeyEvent))
+		{
+			HeldSelectionModifierKeys.Add(EKeys::LeftShift);
+		}
+		if (KeyEvent.IsControlDown() || (bTreatEventKeyAsPressed && bControlKeyEvent))
+		{
+			HeldSelectionModifierKeys.Add(EKeys::LeftControl);
+		}
+
+		// Some Slate paths report the just-released modifier in the event snapshot. The key-up itself wins.
+		if (!bTreatEventKeyAsPressed && bShiftKeyEvent)
+		{
+			HeldSelectionModifierKeys.Remove(EKeys::LeftShift);
+		}
+		if (!bTreatEventKeyAsPressed && bControlKeyEvent)
+		{
+			HeldSelectionModifierKeys.Remove(EKeys::LeftControl);
+		}
+	}
+
+	/** @param FocusedWidget Focused Slate widget. @return True when the widget or one of its Slate ancestors is a supported editable-text control. */
+	bool IsSlateEditableTextFocus(const TSharedPtr<SWidget>& FocusedWidget)
+	{
+		static const FName EditableTextType = SEditableText::StaticWidgetClass().GetWidgetType();
+		static const FName EditableTextBoxType = SEditableTextBox::StaticWidgetClass().GetWidgetType();
+		static const FName MultiLineEditableTextType = SMultiLineEditableText::StaticWidgetClass().GetWidgetType();
+		static const FName MultiLineEditableTextBoxType = SMultiLineEditableTextBox::StaticWidgetClass().GetWidgetType();
+
+		for (TSharedPtr<SWidget> Widget = FocusedWidget; Widget.IsValid(); Widget = Widget->GetParentWidget())
+		{
+			const FName WidgetType = Widget->GetWidgetClass().GetWidgetType();
+			if (WidgetType == EditableTextType
+				|| WidgetType == EditableTextBoxType
+				|| WidgetType == MultiLineEditableTextType
+				|| WidgetType == MultiLineEditableTextBoxType)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @return Small fallback brush used when a prompt icon cannot be resolved. */
@@ -424,50 +508,6 @@ namespace LunarNavigationSubsystem_Private
 		return Verbosity == ELunarConsoleMessageVerbosity::Warning;
 	}
 
-	/** @param LeafStyle Leaf of the parent chain. @param OutCyclePath Receives repeated asset path. @return True when a cycle exists. */
-	bool StyleChainContainsCycle(const ULunarWidgetStyleAsset* LeafStyle, FString& OutCyclePath)
-	{
-		OutCyclePath.Reset();
-		TSet<const ULunarWidgetStyleAsset*> Visited;
-		const ULunarWidgetStyleAsset* Current = LeafStyle;
-		while (IsValid(Current))
-		{
-			if (Visited.Contains(Current))
-			{
-				OutCyclePath = Current->GetPathName();
-				return true;
-			}
-			Visited.Add(Current);
-			Current = Current->ParentStyle;
-		}
-		return false;
-	}
-
-	/** @param LeafStyle Leaf of the parent chain. @param ExpectedStyleClass Required type. @param OutStylePath Receives invalid asset path. @param OutActualClassName Receives actual type. @return True when an incompatible node exists. */
-	bool StyleChainContainsIncompatibleType(
-		const ULunarWidgetStyleAsset* LeafStyle,
-		const UClass* ExpectedStyleClass,
-		FString& OutStylePath,
-		FString& OutActualClassName)
-	{
-		OutStylePath.Reset();
-		OutActualClassName.Reset();
-		TSet<const ULunarWidgetStyleAsset*> Visited;
-		const ULunarWidgetStyleAsset* Current = LeafStyle;
-		while (IsValid(Current) && !Visited.Contains(Current))
-		{
-			Visited.Add(Current);
-			if (!ExpectedStyleClass || !Current->IsA(ExpectedStyleClass))
-			{
-				OutStylePath = Current->GetPathName();
-				OutActualClassName = GetNameSafe(Current->GetClass());
-				return true;
-			}
-			Current = Current->ParentStyle;
-		}
-		return false;
-	}
-
 	/** @param Widget Widget whose ancestors are searched. @return First unsupported native scroll-box ancestor, or nullptr. */
 	const UScrollBox* FindUnsupportedNativeScrollBoxAncestor(const UWidget* Widget)
 	{
@@ -574,6 +614,7 @@ void ULunarNavigationSubsystem::Deinitialize()
 	ResetRepeatState();
 	ConsumedKeyUps.Reset();
 	HeldDigitalKeys.Reset();
+	HeldSelectionModifierKeys.Reset();
 	PressedActions.Reset();
 	InputPresentationChangedNative.Clear();
 
@@ -681,7 +722,12 @@ void ULunarNavigationSubsystem::Tick(float DeltaTime)
 			}
 		}
 
-		SynchronizeNativeFocus();
+		// Pointer and touch interactions may temporarily focus an intentional non-Lunar overlay.
+		// Reclaim focus only after navigation presentation resumes, unless a delegated editor owns it.
+		if (!bPointerPresentationActive || IsNativeFocusDelegationActive())
+		{
+			SynchronizeNativeFocus();
+		}
 		TickNavigationRepeat(FPlatformTime::Seconds());
 	}
 	else
@@ -865,6 +911,36 @@ bool ULunarNavigationSubsystem::SetSelectedWidget(ULunarNavigableWidget* Widget)
 		return false;
 	}
 
+	if (!ActiveScrollNavigationConfinement.IsValid()
+		|| !ActiveScrollNavigationConfinement->bConstrainNavigation)
+	{
+		ActiveScrollNavigationConfinement.Reset();
+		ScrollNavigationReturnWidget.Reset();
+	}
+	if (!bReleasingScrollNavigationConfinement
+		&& !IsWidgetAllowedByScrollConfinement(Widget))
+	{
+		return false;
+	}
+
+	if (!ActiveScrollNavigationConfinement.IsValid())
+	{
+		if (ULunarScrollBox* ConfiningScrollBox = FindDeepestContainingScrollBox(
+			Widget,
+			true,
+			false,
+			ELunarNavigationDirection::Down))
+		{
+			const bool bSelectionAlreadyInside = SelectedWidget
+				&& LunarNavigationSubsystem_Private::IsWidgetDescendantOf(SelectedWidget, ConfiningScrollBox);
+			if (!bSelectionAlreadyInside)
+			{
+				ActiveScrollNavigationConfinement = ConfiningScrollBox;
+				ScrollNavigationReturnWidget = SelectedWidget;
+			}
+		}
+	}
+
 	if (SelectedWidget == Widget)
 	{
 		SynchronizeNativeFocus();
@@ -900,6 +976,20 @@ bool ULunarNavigationSubsystem::SetSelectedWidget(ULunarNavigableWidget* Widget)
 	return true;
 }
 
+bool ULunarNavigationSubsystem::SetSelectedWidgetFromPointer(ULunarNavigableWidget* Widget)
+{
+	if (!IsWidgetEligibleInScope(Widget, GetActiveNavigationScope()))
+	{
+		return false;
+	}
+
+	if (!IsWidgetAllowedByScrollConfinement(Widget))
+	{
+		ReleaseScrollNavigationConfinement(false);
+	}
+	return SetSelectedWidget(Widget);
+}
+
 bool ULunarNavigationSubsystem::SetSelectedWidgetById(const FName NavigationId)
 {
 	if (NavigationId.IsNone())
@@ -918,6 +1008,8 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::GetSelectedWidget() const
 void ULunarNavigationSubsystem::ClearSelection()
 {
 	ResetSelectionScrollChain(true);
+	ActiveScrollNavigationConfinement.Reset();
+	ScrollNavigationReturnWidget.Reset();
 	if (DelegatedFocusOwner)
 	{
 		CommitNativeFocusDelegation(DelegatedFocusOwner);
@@ -1094,6 +1186,10 @@ bool ULunarNavigationSubsystem::RegisterScrollBox(ULunarScrollBox* ScrollBox)
 
 void ULunarNavigationSubsystem::UnregisterScrollBox(ULunarScrollBox* ScrollBox)
 {
+	if (ActiveScrollNavigationConfinement.Get() == ScrollBox)
+	{
+		ReleaseScrollNavigationConfinement(true);
+	}
 	for (ULunarNavigationScope* Scope : ScopeStack)
 	{
 		if (IsValid(Scope)
@@ -1181,15 +1277,10 @@ void ULunarNavigationSubsystem::ScrollSelectionIntoView()
 			PendingSelectionScrollBoxes.Add(Candidate.ScrollBox);
 		}
 	}
-	if (bAdvancingSelectionScrollChain)
-	{
-		bSelectionScrollAdvancePending = true;
-		SelectionScrollResumeFrame = GFrameCounter + 1;
-	}
-	else
-	{
-		AdvanceSelectionScrollChain();
-	}
+	// Selection-state presentation may change desired geometry. Wait until the
+	// next frame before calculating the reveal offset so wrap never uses stale bounds.
+	bSelectionScrollAdvancePending = true;
+	SelectionScrollResumeFrame = GFrameCounter + 1;
 }
 
 void ULunarNavigationSubsystem::AdvanceSelectionScrollChain()
@@ -1627,6 +1718,16 @@ bool ULunarNavigationSubsystem::IsWidgetEligibleInGraphScope(
 		&& Widget->CanReceiveLunarSelection();
 }
 
+bool ULunarNavigationSubsystem::IsWidgetEligibleForNavigationInput(
+	const ULunarNavigableWidget* Widget,
+	const ULunarNavigationScope* Scope,
+	const ELunarInputDeviceType InputDevice) const
+{
+	return IsWidgetEligibleInGraphScope(Widget, Scope)
+		&& (InputDevice == ELunarInputDeviceType::Unknown
+			|| Widget->IsNavigationInputAllowed(InputDevice));
+}
+
 void ULunarNavigationSubsystem::GatherNavigableDescendants(UWidget* RootWidget, TArray<ULunarNavigableWidget*>& OutWidgets) const
 {
 	OutWidgets.Reset();
@@ -1877,6 +1978,20 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::ResolveNavigationTargetInScope
 		return nullptr;
 	}
 
+	auto ResolveAllowedTarget = [&](ULunarNavigableWidget* Candidate) -> ULunarNavigableWidget*
+	{
+		if (!IsWidgetEligibleForNavigationInput(Candidate, Scope, NavigationDispatchInputDevice))
+		{
+			return nullptr;
+		}
+		if (!IsWidgetAllowedByScrollConfinement(Candidate))
+		{
+			bOutBlocked = true;
+			return nullptr;
+		}
+		return Candidate;
+	};
+
 	const FLunarNavigationLink& Link = Current->GetNavigationLink(Direction);
 	switch (Link.Mode)
 	{
@@ -1885,20 +2000,29 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::ResolveNavigationTargetInScope
 		return nullptr;
 
 	case ELunarNavigationLinkMode::Widget:
-		if (IsWidgetEligibleInGraphScope(Link.Widget, Scope))
+		if (ULunarNavigableWidget* LinkedWidget = ResolveAllowedTarget(Link.Widget))
 		{
-			return Link.Widget;
+			return LinkedWidget;
+		}
+		if (bOutBlocked)
+		{
+			return nullptr;
 		}
 		break;
 
 	case ELunarNavigationLinkMode::NavigationId:
 		for (ULunarNavigableWidget* LinkedById : Scope->RegisteredWidgets)
 		{
-			if (LinkedById
-				&& LinkedById->GetNavigationId() == Link.NavigationId
-				&& IsWidgetEligibleInGraphScope(LinkedById, Scope))
+			if (LinkedById && LinkedById->GetNavigationId() == Link.NavigationId)
 			{
-				return LinkedById;
+				if (ULunarNavigableWidget* AllowedWidget = ResolveAllowedTarget(LinkedById))
+				{
+					return AllowedWidget;
+				}
+				if (bOutBlocked)
+				{
+					return nullptr;
+				}
 			}
 		}
 		break;
@@ -1909,12 +2033,65 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::ResolveNavigationTargetInScope
 	}
 
 	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	if (!Settings || Settings->Navigation.Behavior.bEnableGeometricFallback)
+	const bool bUseGeometricFallback = !Settings || Settings->Navigation.Behavior.bEnableGeometricFallback;
+	ULunarScrollBox* ActiveConfinement = ActiveScrollNavigationConfinement.Get();
+	ULunarScrollBox* AxisScrollBox = FindDeepestContainingScrollBox(Current, false, true, Direction);
+	if (ActiveConfinement
+		&& AxisScrollBox
+		&& !LunarNavigationSubsystem_Private::IsWidgetDescendantOf(AxisScrollBox, ActiveConfinement))
+	{
+		AxisScrollBox = nullptr;
+	}
+	if (bUseGeometricFallback && AxisScrollBox)
+	{
+		if (ULunarNavigableWidget* LocalTarget = FindGeometricTargetInScope(
+			Current,
+			Direction,
+			false,
+			Scope,
+			AxisScrollBox))
+		{
+			return LocalTarget;
+		}
+		if (AxisScrollBox->bWrapNavigation)
+		{
+			return FindGeometricTargetInScope(Current, Direction, true, Scope, AxisScrollBox);
+		}
+	}
+
+	if (ActiveConfinement
+		&& ActiveConfinement->bConstrainNavigation
+		&& LunarNavigationSubsystem_Private::IsWidgetDescendantOf(Current, ActiveConfinement))
+	{
+		if (bUseGeometricFallback)
+		{
+			if (ULunarNavigableWidget* ConstrainedTarget = FindGeometricTargetInScope(
+				Current,
+				Direction,
+				false,
+				Scope,
+				ActiveConfinement))
+			{
+				return ConstrainedTarget;
+			}
+		}
+		bOutBlocked = true;
+		return nullptr;
+	}
+
+	if (bUseGeometricFallback)
 	{
 		if (ULunarNavigableWidget* GeometricTarget = FindGeometricTargetInScope(Current, Direction, false, Scope))
 		{
 			return GeometricTarget;
 		}
+	}
+
+	// A ScrollBox owns wrap along its primary axis. When local wrap is disabled,
+	// navigation may leave toward a real forward target but never inherits screen wrap.
+	if (AxisScrollBox)
+	{
+		return nullptr;
 	}
 
 	const bool bWrap = IsHorizontalDirection(Direction)
@@ -1935,9 +2112,12 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::FindGeometricTargetInScope(
 	ULunarNavigableWidget* Current,
 	const ELunarNavigationDirection Direction,
 	const bool bWrap,
-	const ULunarNavigationScope* Scope) const
+	const ULunarNavigationScope* Scope,
+	const ULunarScrollBox* RestrictToScrollBox) const
 {
-	if (!IsWidgetEligibleInGraphScope(Current, Scope))
+	if (!IsWidgetEligibleInGraphScope(Current, Scope)
+		|| (RestrictToScrollBox
+			&& !LunarNavigationSubsystem_Private::IsWidgetDescendantOf(Current, RestrictToScrollBox)))
 	{
 		return nullptr;
 	}
@@ -1964,7 +2144,10 @@ ULunarNavigableWidget* ULunarNavigationSubsystem::FindGeometricTargetInScope(
 
 		for (ULunarNavigableWidget* Candidate : Scope->RegisteredWidgets)
 		{
-			if (Candidate == Current || !IsWidgetEligibleInGraphScope(Candidate, Scope))
+			if (Candidate == Current
+				|| !IsWidgetEligibleForNavigationInput(Candidate, Scope, NavigationDispatchInputDevice)
+				|| (RestrictToScrollBox
+					&& !LunarNavigationSubsystem_Private::IsWidgetDescendantOf(Candidate, RestrictToScrollBox)))
 			{
 				continue;
 			}
@@ -2081,6 +2264,76 @@ bool ULunarNavigationSubsystem::IsHorizontalDirection(const ELunarNavigationDire
 	return Direction == ELunarNavigationDirection::Left || Direction == ELunarNavigationDirection::Right;
 }
 
+ULunarScrollBox* ULunarNavigationSubsystem::FindDeepestContainingScrollBox(
+	const UWidget* Widget,
+	const bool bRequireConfinement,
+	const bool bRequireMatchingOrientation,
+	const ELunarNavigationDirection Direction) const
+{
+	ULunarScrollBox* BestScrollBox = nullptr;
+	int32 BestDepth = INDEX_NONE;
+	for (const TWeakObjectPtr<ULunarScrollBox>& WeakScrollBox : RegisteredScrollBoxes)
+	{
+		ULunarScrollBox* ScrollBox = WeakScrollBox.Get();
+		if (!IsValid(ScrollBox)
+			|| (bRequireConfinement && !ScrollBox->bConstrainNavigation)
+			|| !LunarNavigationSubsystem_Private::IsWidgetDescendantOf(Widget, ScrollBox)
+			|| (bRequireMatchingOrientation
+				&& (ScrollBox->GetOrientation() == Orient_Horizontal) != IsHorizontalDirection(Direction)))
+		{
+			continue;
+		}
+
+		const int32 Depth = LunarNavigationSubsystem_Private::GetLogicalWidgetDepth(ScrollBox);
+		if (!BestScrollBox || Depth > BestDepth)
+		{
+			BestScrollBox = ScrollBox;
+			BestDepth = Depth;
+		}
+	}
+	return BestScrollBox;
+}
+
+bool ULunarNavigationSubsystem::IsWidgetAllowedByScrollConfinement(
+	const ULunarNavigableWidget* Widget) const
+{
+	const ULunarScrollBox* ActiveConfinement = ActiveScrollNavigationConfinement.Get();
+	return !ActiveConfinement
+		|| !ActiveConfinement->bConstrainNavigation
+		|| LunarNavigationSubsystem_Private::IsWidgetDescendantOf(Widget, ActiveConfinement);
+}
+
+bool ULunarNavigationSubsystem::IsScrollBoxAllowedByNavigationConfinement(
+	const ULunarScrollBox* ScrollBox) const
+{
+	const ULunarScrollBox* ActiveConfinement = ActiveScrollNavigationConfinement.Get();
+	return !ActiveConfinement
+		|| !ActiveConfinement->bConstrainNavigation
+		|| LunarNavigationSubsystem_Private::IsWidgetDescendantOf(ScrollBox, ActiveConfinement);
+}
+
+bool ULunarNavigationSubsystem::ReleaseScrollNavigationConfinement(
+	const bool bRestorePreviousSelection)
+{
+	if (!ActiveScrollNavigationConfinement.IsValid())
+	{
+		ActiveScrollNavigationConfinement.Reset();
+		ScrollNavigationReturnWidget.Reset();
+		return false;
+	}
+
+	ULunarNavigableWidget* ReturnWidget = ScrollNavigationReturnWidget.Get();
+	ActiveScrollNavigationConfinement.Reset();
+	ScrollNavigationReturnWidget.Reset();
+	if (bRestorePreviousSelection
+		&& IsWidgetEligibleInScope(ReturnWidget, GetActiveNavigationScope()))
+	{
+		TGuardValue<bool> ReleaseGuard(bReleasingScrollNavigationConfinement, true);
+		SetSelectedWidget(ReturnWidget);
+	}
+	return true;
+}
+
 bool ULunarNavigationSubsystem::BeginNativeFocusDelegation(ULunarNavigableWidget* OwnerWidget, UWidget* NativeFocusWidget)
 {
 	if (!IsWidgetEligibleInScope(OwnerWidget, GetActiveNavigationScope())
@@ -2187,6 +2440,15 @@ void ULunarNavigationSubsystem::SynchronizeNativeFocus()
 		{
 			return;
 		}
+	}
+
+	if (SelectedWidget
+		&& !bPointerPresentationActive
+		&& LastInputDevice != ELunarInputDeviceType::Unknown
+		&& !SelectedWidget->IsNavigationInputAllowed(LastInputDevice))
+	{
+		ClearNativeUserFocus();
+		return;
 	}
 
 	if (SelectedWidget
@@ -2492,6 +2754,28 @@ void ULunarNavigationSubsystem::ResolveInputPromptActions(
 		return;
 	}
 
+	const bool bOwnerAllowsActiveInput = [this, OwnerWidget]()
+	{
+		switch (LastInputDevice)
+		{
+		case ELunarInputDeviceType::KeyboardMouse:
+			return bPointerPresentationActive
+				? OwnerWidget->IsMouseInputAllowed()
+				: OwnerWidget->IsKeyboardInputAllowed();
+		case ELunarInputDeviceType::Gamepad:
+			return OwnerWidget->IsGamepadInputAllowed();
+		case ELunarInputDeviceType::Touch:
+			return OwnerWidget->IsTouchInputAllowed();
+		case ELunarInputDeviceType::Unknown:
+		default:
+			return true;
+		}
+	}();
+	if (!bOwnerAllowsActiveInput)
+	{
+		return;
+	}
+
 	RebuildActionDefinitions();
 	ULunarInputIconSet* ResolvedIconSet = IconSetOverride
 		? IconSetOverride
@@ -2522,7 +2806,9 @@ void ULunarNavigationSubsystem::ResolveInputPromptActions(
 		{
 			Resolved.bEnabled = false;
 			Resolved.DisplayText = Request.DisplayTextOverride;
-			Resolved.Icon = LunarNavigationSubsystem_Private::MakeMissingPromptIconBrush();
+			Resolved.Icon = Request.bRequireIcon
+				? LunarNavigationSubsystem_Private::MakeMissingPromptIconBrush()
+				: FSlateBrush();
 			const FString ErrorKey = FString::Printf(
 				TEXT("UnknownPromptAction|%s|%s"),
 				*OwnerWidget->GetPathName(),
@@ -2555,9 +2841,29 @@ void ULunarNavigationSubsystem::ResolveInputPromptActions(
 			}
 		}
 
-		if (Request.IconOverride.IsSet())
+		if (Request.bOverrideIcon)
 		{
-			Resolved.Icon = Request.IconOverride;
+			if (Request.IconOverride.GetResourceObject()
+				|| !Request.IconOverride.GetResourceName().IsNone())
+			{
+				Resolved.Icon = Request.IconOverride;
+			}
+			else
+			{
+				Resolved.Icon = LunarNavigationSubsystem_Private::MakeMissingPromptIconBrush();
+				const FString ErrorKey = FString::Printf(
+					TEXT("InvalidPromptIconOverride|%s|%s"),
+					*OwnerWidget->GetPathName(),
+					*Request.ActionTag.ToString());
+				ReportPromptConfigurationError(
+					ErrorKey,
+					FText::Format(
+						LOCTEXT(
+							"InvalidPromptIconOverride",
+							"Input prompt on widget '{0}' enables Icon Override for action '{1}', but the brush has no Texture or Material resource."),
+						FText::FromString(OwnerWidget->GetPathName()),
+						FText::FromName(Request.ActionTag.GetTagName())));
+			}
 			continue;
 		}
 		if (LastInputDevice == ELunarInputDeviceType::Touch)
@@ -2568,18 +2874,24 @@ void ULunarNavigationSubsystem::ResolveInputPromptActions(
 		}
 		if (LastInputDevice == ELunarInputDeviceType::Unknown)
 		{
-			Resolved.Icon = LunarNavigationSubsystem_Private::MakeMissingPromptIconBrush();
+			Resolved.Icon = Request.bRequireIcon
+				? LunarNavigationSubsystem_Private::MakeMissingPromptIconBrush()
+				: FSlateBrush();
 			continue;
 		}
 
 		FSlateBrush ResolvedIcon;
 		const bool bIconResolved = Resolved.ResolvedKey.IsValid()
 			&& ResolvedIconSet
-			&& ResolvedIconSet->ResolveIconForKey(Resolved.ResolvedKey, ResolvedIcon)
-			&& ResolvedIcon.IsSet();
+			&& ResolvedIconSet->ResolveIconForKey(Resolved.ResolvedKey, ResolvedIcon);
 		if (bIconResolved)
 		{
 			Resolved.Icon = ResolvedIcon;
+			continue;
+		}
+		if (!Request.bRequireIcon)
+		{
+			Resolved.Icon = FSlateBrush();
 			continue;
 		}
 
@@ -2679,7 +2991,8 @@ void ULunarNavigationSubsystem::HandlePromptConfigurationObjectChanged(
 	const bool bAffectsGlobalConfiguration = Object->IsA<ULunarSettings>()
 		|| Object->IsA<ULunarUIActionRegistry>()
 		|| Object->IsA<ULunarInputIconSet>()
-		|| Object->IsA<ULunarWidgetStyleAsset>();
+		|| Object->IsA<ULunarUISoundFeedbackAsset>()
+		|| Object->IsA<ULunarUIHapticFeedbackAsset>();
 	const bool bAffectsScopeGraph = Object->IsA<ULunarNavigableWidget>()
 		|| Object->IsA<ULunarScrollBox>()
 		|| Object->IsA<ULunarInputPromptWidget>()
@@ -2700,8 +3013,7 @@ void ULunarNavigationSubsystem::HandlePromptConfigurationObjectChanged(
 		}
 		if (Object->IsA<ULunarSettings>()
 			|| Object->IsA<ULunarUIActionRegistry>()
-			|| Object->IsA<ULunarInputIconSet>()
-			|| Object->IsA<ULunarInputPromptStyleAsset>())
+			|| Object->IsA<ULunarInputIconSet>())
 		{
 			InvalidateInputPromptPresentation(true);
 		}
@@ -2853,6 +3165,7 @@ bool ULunarNavigationSubsystem::IsEventForOwningLocalPlayer(const FAnalogInputEv
 ELunarUIActionResult ULunarNavigationSubsystem::DispatchActionToSelected(const FLunarUIActionContext& ActionContext)
 {
 	if (!IsWidgetEligibleInScope(SelectedWidget, GetActiveNavigationScope())
+		|| !SelectedWidget->IsNavigationInputAllowed(ActionContext.InputDevice)
 		|| !SelectedWidget->CanHandleLunarAction(ActionContext))
 	{
 		return ELunarUIActionResult::Unhandled;
@@ -2887,6 +3200,11 @@ bool ULunarNavigationSubsystem::DispatchPhysicalAction(
 		return false;
 	}
 
+	const ELunarInputDeviceType InputDevice = Key.IsGamepadKey()
+		? ELunarInputDeviceType::Gamepad
+		: ELunarInputDeviceType::KeyboardMouse;
+	TGuardValue<ELunarInputDeviceType> InputDeviceGuard(NavigationDispatchInputDevice, InputDevice);
+
 	TArray<FGameplayTag> BoundActions;
 	GetBoundActions(Key, BoundActions);
 	if (BoundActions.IsEmpty())
@@ -2915,6 +3233,12 @@ bool ULunarNavigationSubsystem::DispatchPhysicalAction(
 		Context.InputDevice = Key.IsGamepadKey() ? ELunarInputDeviceType::Gamepad : ELunarInputDeviceType::KeyboardMouse;
 		Context.InputEvent = InputEvent;
 		Context.bIsRepeat = bIsRepeat;
+		Context.bRangeSelectionModifier = HeldSelectionModifierKeys.Contains(EKeys::LeftShift)
+			|| HeldSelectionModifierKeys.Contains(EKeys::RightShift)
+			|| HeldSelectionModifierKeys.Contains(EKeys::Gamepad_LeftShoulder);
+		Context.bAdditiveSelectionModifier = HeldSelectionModifierKeys.Contains(EKeys::LeftControl)
+			|| HeldSelectionModifierKeys.Contains(EKeys::RightControl)
+			|| HeldSelectionModifierKeys.Contains(EKeys::Gamepad_RightShoulder);
 		Context.AnalogMagnitude = AnalogMagnitude;
 		Context.LocalPlayer = GetLocalPlayer();
 		Context.bHasNavigationDirection = LunarNavigationSubsystem_Private::ActionToDirection(ActionTag, Context.NavigationDirection);
@@ -2942,6 +3266,8 @@ bool ULunarNavigationSubsystem::DispatchPhysicalAction(
 				OutPressedAction->ActionTag = ActionTag;
 				OutPressedAction->bHasDirection = Context.bHasNavigationDirection;
 				OutPressedAction->Direction = Context.NavigationDirection;
+				OutPressedAction->bRangeSelectionModifier = Context.bRangeSelectionModifier;
+				OutPressedAction->bAdditiveSelectionModifier = Context.bAdditiveSelectionModifier;
 			}
 		}
 		return Result;
@@ -3017,6 +3343,11 @@ bool ULunarNavigationSubsystem::DispatchPhysicalAction(
 
 	if (BoundActions.Contains(UI_Action_Accept.GetTag()))
 	{
+		if (IsWidgetEligibleInScope(SelectedWidget, GetActiveNavigationScope())
+			&& !SelectedWidget->IsNavigationInputAllowed(InputDevice))
+		{
+			return true;
+		}
 		const ELunarUIActionResult Result = TrySelected(UI_Action_Accept.GetTag());
 		if (Result == ELunarUIActionResult::Unhandled)
 		{
@@ -3028,9 +3359,13 @@ bool ULunarNavigationSubsystem::DispatchPhysicalAction(
 	if (BoundActions.Contains(UI_Action_Back.GetTag()))
 	{
 		const ELunarUIActionResult Result = TrySelected(UI_Action_Back.GetTag());
-		if (Result == ELunarUIActionResult::Unhandled && !PopNavigationScope(GetActiveNavigationScope()))
+		if (Result == ELunarUIActionResult::Unhandled)
 		{
-			BroadcastRejected(MakeContext(UI_Action_Back.GetTag()));
+			if (!ReleaseScrollNavigationConfinement(true)
+				&& !PopNavigationScope(GetActiveNavigationScope()))
+			{
+				BroadcastRejected(MakeContext(UI_Action_Back.GetTag()));
+			}
 		}
 		return true;
 	}
@@ -3046,8 +3381,19 @@ bool ULunarNavigationSubsystem::HandleNavigationKeyDown(const FKeyEvent& KeyEven
 	}
 
 	const FKey Key = KeyEvent.GetKey();
+	const ELunarInputDeviceType InputDevice = Key.IsGamepadKey()
+		? ELunarInputDeviceType::Gamepad
+		: ELunarInputDeviceType::KeyboardMouse;
+	LunarNavigationSubsystem_Private::SynchronizeKeyboardSelectionModifiers(
+		KeyEvent,
+		HeldSelectionModifierKeys,
+		true);
+	if (!Key.IsGamepadKey() && IsExternalNativeTextInputActive())
+	{
+		return DelegatedFocusOwner && !DelegatedFocusOwner->IsKeyboardInputAllowed();
+	}
 	SetLastInputDeviceInternal(
-		Key.IsGamepadKey() ? ELunarInputDeviceType::Gamepad : ELunarInputDeviceType::KeyboardMouse,
+		InputDevice,
 		false,
 		KeyEvent.GetInputDeviceId());
 	if (!GetActiveNavigationScope())
@@ -3055,8 +3401,18 @@ bool ULunarNavigationSubsystem::HandleNavigationKeyDown(const FKeyEvent& KeyEven
 		return false;
 	}
 
+	if (LunarNavigationSubsystem_Private::IsRangeSelectionModifierKey(Key)
+		|| LunarNavigationSubsystem_Private::IsAdditiveSelectionModifierKey(Key))
+	{
+		HeldSelectionModifierKeys.Add(Key);
+	}
+
 	if (IsNativeFocusDelegationActive())
 	{
+		if (!DelegatedFocusOwner->IsNavigationInputAllowed(InputDevice))
+		{
+			return true;
+		}
 		TArray<FGameplayTag> Actions;
 		GetBoundActions(Key, Actions);
 		if (Actions.Contains(LunarGameplayTags::UI_Action_Back.GetTag()))
@@ -3076,6 +3432,13 @@ bool ULunarNavigationSubsystem::HandleNavigationKeyDown(const FKeyEvent& KeyEven
 			}
 		}
 		return false;
+	}
+
+	// Raw Gamepad_LeftX/Y analog events own left-stick dispatch, hysteresis, and repeat timing.
+	// Some platform paths also emit cardinal mirror keys; consume them without dispatching twice.
+	if (LunarNavigationSubsystem_Private::IsLeftStickDirectionKey(Key))
+	{
+		return true;
 	}
 
 	if (KeyEvent.IsRepeat() || HeldDigitalKeys.Contains(Key))
@@ -3123,10 +3486,31 @@ bool ULunarNavigationSubsystem::HandleNavigationKeyUp(const FKeyEvent& KeyEvent)
 	}
 
 	const FKey Key = KeyEvent.GetKey();
+	LunarNavigationSubsystem_Private::SynchronizeKeyboardSelectionModifiers(
+		KeyEvent,
+		HeldSelectionModifierKeys,
+		false);
+	HeldSelectionModifierKeys.Remove(Key);
+	if (!Key.IsGamepadKey() && IsExternalNativeTextInputActive())
+	{
+		return false;
+	}
 	SetLastInputDeviceInternal(
 		Key.IsGamepadKey() ? ELunarInputDeviceType::Gamepad : ELunarInputDeviceType::KeyboardMouse,
 		false,
 		KeyEvent.GetInputDeviceId());
+	if (LunarNavigationSubsystem_Private::IsLeftStickDirectionKey(Key))
+	{
+		HeldDigitalKeys.Remove(Key);
+		ConsumedKeyUps.Remove(Key);
+		PressedActions.Remove(Key);
+		if (DigitalRepeatKey == Key)
+		{
+			DigitalRepeatKey = EKeys::Invalid;
+			NextDigitalRepeatTime = 0.0;
+		}
+		return GetActiveNavigationScope() != nullptr;
+	}
 	HeldDigitalKeys.Remove(Key);
 	if (DigitalRepeatKey == Key)
 	{
@@ -3151,10 +3535,21 @@ bool ULunarNavigationSubsystem::HandleNavigationKeyUp(const FKeyEvent& KeyEvent)
 			Context.InputEvent = IE_Released;
 			Context.bHasNavigationDirection = PressedAction->bHasDirection;
 			Context.NavigationDirection = PressedAction->Direction;
+			Context.bRangeSelectionModifier = PressedAction->bRangeSelectionModifier;
+			Context.bAdditiveSelectionModifier = PressedAction->bAdditiveSelectionModifier;
 			Context.LocalPlayer = GetLocalPlayer();
 			// The press already established ownership. Release must not re-run CanHandleLunarAction:
 			// controls may intentionally change the state that made the press claimable.
-			OwnerWidget->HandleLunarAction(Context);
+			const ELunarUIActionResult ReleaseResult = OwnerWidget->HandleLunarAction(Context);
+			const ULunarScrollBox* ActiveConfinement = ActiveScrollNavigationConfinement.Get();
+			if (ReleaseResult == ELunarUIActionResult::Handled
+				&& Context.ActionTag == LunarGameplayTags::UI_Action_Accept.GetTag()
+				&& ActiveConfinement
+				&& ActiveConfinement->bExitConfinementOnNavigationAccept
+				&& LunarNavigationSubsystem_Private::IsWidgetDescendantOf(OwnerWidget, ActiveConfinement))
+			{
+				ReleaseScrollNavigationConfinement(true);
+			}
 		}
 		PressedActions.Remove(Key);
 	}
@@ -3265,6 +3660,10 @@ void ULunarNavigationSubsystem::SetLastInputDeviceInternal(
 	{
 		LastInputDevice = InputDevice;
 		OnInputDeviceChanged.Broadcast(InputDevice);
+	}
+	if (bPointerPresentationChanged && !bPointerInput)
+	{
+		SynchronizeNativeFocus();
 	}
 	if (bInputDeviceChanged || bPointerPresentationChanged || bHardwareIdentityChanged)
 	{
@@ -3423,9 +3822,56 @@ ELunarInputDeviceType ULunarNavigationSubsystem::GetLastInputDevice() const
 	return LastInputDevice;
 }
 
+bool ULunarNavigationSubsystem::GetActiveAnalogNavigationForWidget(
+	const ULunarNavigableWidget* Widget,
+	ELunarNavigationDirection& OutDirection,
+	float& OutMagnitude) const
+{
+	OutDirection = ELunarNavigationDirection::Up;
+	OutMagnitude = 0.0f;
+	if (!Widget
+		|| Widget != SelectedWidget
+		|| !bAnalogDirectionActive
+		|| !bHasAnalogPressedAction
+		|| AnalogPressedAction.OwnerWidget.Get() != Widget)
+	{
+		return false;
+	}
+
+	OutDirection = AnalogDirection;
+	OutMagnitude = FMath::Clamp(ActiveAnalogMagnitude, 0.0f, 1.0f);
+	return OutMagnitude > 0.0f;
+}
+
 bool ULunarNavigationSubsystem::IsPointerPresentationActive() const
 {
 	return bPointerPresentationActive;
+}
+
+bool ULunarNavigationSubsystem::IsExternalNativeTextInputActive() const
+{
+	if (!bPointerPresentationActive
+		|| IsNativeFocusDelegationActive()
+		|| !FSlateApplication::IsInitialized()
+		|| !GetLocalPlayer())
+	{
+		return false;
+	}
+
+	APlayerController* PlayerController = GetLocalPlayer()->GetPlayerController(GetWorld());
+	if (PlayerController
+		&& SelectedWidget
+		&& (SelectedWidget->HasUserFocus(PlayerController)
+			|| SelectedWidget->HasUserFocusedDescendants(PlayerController)))
+	{
+		return false;
+	}
+
+	const TSharedPtr<const FSlateUser> SlateUser = GetLocalPlayer()->GetSlateUser();
+	const TSharedPtr<SWidget> FocusedWidget = SlateUser.IsValid()
+		? FSlateApplication::Get().GetUserFocusedWidget(SlateUser->GetUserIndex())
+		: nullptr;
+	return LunarNavigationSubsystem_Private::IsSlateEditableTextFocus(FocusedWidget);
 }
 
 void ULunarNavigationSubsystem::PruneFinishedUISounds()
@@ -3540,6 +3986,8 @@ void ULunarNavigationSubsystem::ReleaseAnalogPressedAction()
 		Context.InputEvent = IE_Released;
 		Context.bHasNavigationDirection = AnalogPressedAction.bHasDirection;
 		Context.NavigationDirection = AnalogPressedAction.Direction;
+		Context.bRangeSelectionModifier = AnalogPressedAction.bRangeSelectionModifier;
+		Context.bAdditiveSelectionModifier = AnalogPressedAction.bAdditiveSelectionModifier;
 		Context.LocalPlayer = GetLocalPlayer();
 		OwnerWidget->HandleLunarAction(Context);
 	}
@@ -3552,6 +4000,7 @@ void ULunarNavigationSubsystem::ResetRepeatState()
 {
 	ReleaseAnalogPressedAction();
 	HeldDigitalKeys.Reset();
+	HeldSelectionModifierKeys.Reset();
 	DigitalRepeatKey = EKeys::Invalid;
 	NextDigitalRepeatTime = 0.0;
 	AnalogVector = FVector2D::ZeroVector;
@@ -3933,6 +4382,45 @@ TArray<FLunarNavigationValidationMessage> ULunarNavigationSubsystem::ValidateNav
 			continue;
 		}
 
+		if (const ULunarRadio* Radio = Cast<ULunarRadio>(Widget))
+		{
+			TMap<FString, int32> SeenRadioValues;
+			const TArray<FLunarRadioSideVisualData>& RadioData = Radio->GetSideVisualDataArray();
+			for (int32 OptionIndex = 0; OptionIndex < RadioData.Num(); ++OptionIndex)
+			{
+				const FString& StringValue = RadioData[OptionIndex].StringValue;
+				if (StringValue.IsEmpty())
+				{
+					AddMessage(
+						ELunarConsoleMessageVerbosity::Error,
+						TEXT("EmptyRadioStringValue"),
+						Radio->GetPathName(),
+						FText::Format(
+							LOCTEXT("EmptyRadioStringValue", "Radio '{0}' option {1} has an empty StringValue. Assign a unique technical ID."),
+							FText::FromString(Radio->GetPathName()),
+							FText::AsNumber(OptionIndex)));
+					continue;
+				}
+				if (const int32* ExistingIndex = SeenRadioValues.Find(StringValue))
+				{
+					AddMessage(
+						ELunarConsoleMessageVerbosity::Error,
+						TEXT("DuplicateRadioStringValue"),
+						Radio->GetPathName(),
+						FText::Format(
+							LOCTEXT("DuplicateRadioStringValue", "Radio '{0}' options {1} and {2} share StringValue '{3}'. Assign a unique technical ID to every option."),
+							FText::FromString(Radio->GetPathName()),
+							FText::AsNumber(*ExistingIndex),
+							FText::AsNumber(OptionIndex),
+							FText::FromString(StringValue)));
+				}
+				else
+				{
+					SeenRadioValues.Add(StringValue, OptionIndex);
+				}
+			}
+		}
+
 		for (const ELunarNavigationDirection Direction : Directions)
 		{
 			const FLunarNavigationLink& Link = Widget->GetNavigationLink(Direction);
@@ -4120,114 +4608,99 @@ TArray<FLunarNavigationValidationMessage> ULunarNavigationSubsystem::ValidateNav
 				FText::Format(
 					LOCTEXT(
 						"MissingAccessibleName",
-						"Eligible Lunar widget '{0}' has no AccessibleName. Add localized accessible text for assistive technology."),
+						"Eligible Lunar widget '{0}' has no AccessibleName. Add accessible text for assistive technology."),
 					FText::FromString(Widget->GetPathName())));
 		}
 
-		FString CyclePath;
-		const bool bStyleCycle = LunarNavigationSubsystem_Private::StyleChainContainsCycle(
-			Widget->StyleAsset,
-			CyclePath);
-		if (bStyleCycle)
+		auto ValidateSoundFeedback = [&AddMessage, Widget](
+			const FLunarUISoundOverride& Override,
+			const FLunarUISoundSpec* DataAssetEntry,
+			const TCHAR* EventName)
 		{
-			AddMessage(
-				ELunarConsoleMessageVerbosity::Error,
-				TEXT("StyleParentCycle"),
-				Widget->GetPathName(),
-				FText::Format(
-					LOCTEXT(
-						"WidgetStyleParentCycle",
-						"Style parent cycle for widget '{0}' repeats style '{1}'. Break the ParentStyle cycle."),
-					FText::FromString(Widget->GetPathName()),
-					FText::FromString(CyclePath)));
-		}
-
-		FLunarCommonStylePatch IgnoredResolvedStyle;
-		FString StyleResolutionError;
-		if (!bStyleCycle
-			&& !Widget->ResolveCommonStylePatch(IgnoredResolvedStyle, StyleResolutionError)
-			&& !StyleResolutionError.IsEmpty())
-		{
-			AddMessage(
-				ELunarConsoleMessageVerbosity::Error,
-				TEXT("InvalidWidgetStyleConfiguration"),
-				Widget->GetPathName(),
-				FText::Format(
-					LOCTEXT(
-						"InvalidWidgetStyleConfiguration",
-						"Widget '{0}' has an invalid style configuration: {1}"),
-					FText::FromString(Widget->GetPathName()),
-					FText::FromString(StyleResolutionError)));
-		}
-
-		if (Widget->bEnableInputPrompt)
-		{
-			const ULunarInputPromptWidget* PromptWidget = Cast<ULunarInputPromptWidget>(Widget->InputPromptReceiver);
-			UClass* PromptWidgetClass = Widget->ResolveInputPromptReceiverClass();
-			if (!PromptWidget && PromptWidgetClass && PromptWidgetClass->IsChildOf(ULunarInputPromptWidget::StaticClass()))
+			if (Override.Mode != ELunarFeedbackOverrideMode::UseDataAsset)
 			{
-				PromptWidget = Cast<ULunarInputPromptWidget>(PromptWidgetClass->GetDefaultObject());
+				return;
 			}
-
-			if (PromptWidget)
+			if (!IsValid(Widget->SoundFeedbackAsset))
 			{
-				FLunarInputPromptStylePatch IgnoredPromptStyle;
-				FString PromptStyleError;
-				if (!LunarStyleResolver::ResolveInputPromptStyle(
-					PromptWidget->StyleAsset,
-					Widget->GetLunarVisualState(),
-					PromptWidget->StyleOverrides,
-					IgnoredPromptStyle,
-					&PromptStyleError)
-					&& !PromptStyleError.IsEmpty())
-				{
-					AddMessage(
-						ELunarConsoleMessageVerbosity::Error,
-						TEXT("InvalidPromptWidgetStyleConfiguration"),
-						Widget->GetPathName(),
-						FText::Format(
-							LOCTEXT(
-								"InvalidPromptWidgetStyleConfiguration",
-								"Prompt Widget class '{0}' used by '{1}' has an invalid style configuration: {2}"),
-							FText::FromString(GetPathNameSafe(PromptWidgetClass ? PromptWidgetClass : PromptWidget->GetClass())),
-							FText::FromString(Widget->GetPathName()),
-							FText::FromString(PromptStyleError)));
-				}
+				AddMessage(
+					ELunarConsoleMessageVerbosity::Warning,
+					FName(*FString::Printf(TEXT("MissingSoundFeedbackAsset_%s"), EventName)),
+					Widget->GetPathName(),
+					FText::Format(
+						LOCTEXT(
+							"MissingSoundFeedbackAsset",
+							"Widget '{0}' uses Data Asset sound feedback for '{1}', but SoundFeedbackAsset is not assigned. Assign a sound feedback asset, choose Custom/Use Global, or disable this event."),
+						FText::FromString(Widget->GetPathName()),
+						FText::FromString(EventName)));
+				return;
 			}
-		}
-	}
+			if (!DataAssetEntry || !IsValid(DataAssetEntry->Sound))
+			{
+				AddMessage(
+					ELunarConsoleMessageVerbosity::Warning,
+					FName(*FString::Printf(TEXT("MissingSoundFeedbackEntry_%s"), EventName)),
+					Widget->GetPathName(),
+					FText::Format(
+						LOCTEXT(
+							"MissingSoundFeedbackEntry",
+							"Sound feedback asset '{0}' has no sound for '{1}', requested by widget '{2}'. Configure the entry, choose Custom/Use Global, or disable this event. Lunar intentionally does not fall back."),
+						FText::FromString(Widget->SoundFeedbackAsset->GetPathName()),
+						FText::FromString(EventName),
+						FText::FromString(Widget->GetPathName())));
+			}
+		};
+		ValidateSoundFeedback(Widget->SoundOverrides.PointerHovered, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.PointerHovered : nullptr, TEXT("Pointer Hovered"));
+		ValidateSoundFeedback(Widget->SoundOverrides.PointerPressed, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.PointerPressed : nullptr, TEXT("Pointer Pressed"));
+		ValidateSoundFeedback(Widget->SoundOverrides.PointerClicked, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.PointerClicked : nullptr, TEXT("Pointer Clicked"));
+		ValidateSoundFeedback(Widget->SoundOverrides.PointerRejected, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.PointerRejected : nullptr, TEXT("Pointer Rejected"));
+		ValidateSoundFeedback(Widget->SoundOverrides.NavigationSelected, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.NavigationSelected : nullptr, TEXT("Navigation Selected"));
+		ValidateSoundFeedback(Widget->SoundOverrides.NavigationPressed, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.NavigationPressed : nullptr, TEXT("Navigation Pressed"));
+		ValidateSoundFeedback(Widget->SoundOverrides.NavigationClicked, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.NavigationClicked : nullptr, TEXT("Navigation Clicked"));
+		ValidateSoundFeedback(Widget->SoundOverrides.NavigationRejected, Widget->SoundFeedbackAsset ? &Widget->SoundFeedbackAsset->Sounds.NavigationRejected : nullptr, TEXT("Navigation Rejected"));
 
-	for (const TWeakObjectPtr<ULunarScrollBox>& WeakScrollBox : RegisteredScrollBoxes)
-	{
-		ULunarScrollBox* ScrollBox = WeakScrollBox.Get();
-		if (!IsValid(ScrollBox)
-			|| !LunarNavigationSubsystem_Private::IsWidgetDescendantOf(ScrollBox, Scope->RootWidget))
+		auto ValidateHapticFeedback = [&AddMessage, Widget](
+			const FLunarUIHapticOverride& Override,
+			const FLunarUIHapticSpec* DataAssetEntry,
+			const TCHAR* EventName)
 		{
-			continue;
-		}
-
-		FLunarUIVisualState ScrollBoxVisualState;
-		ScrollBoxVisualState.ValueStateTag = LunarGameplayTags::UI_State_Value_Normal.GetTag();
-		FLunarScrollBoxStylePatch IgnoredResolvedStyle;
-		FString StyleResolutionError;
-		if (!LunarStyleResolver::ResolveScrollBoxStyle(
-			ScrollBox->StyleAsset,
-			ScrollBoxVisualState,
-			IgnoredResolvedStyle,
-			&StyleResolutionError)
-			&& !StyleResolutionError.IsEmpty())
-		{
-			AddMessage(
-				ELunarConsoleMessageVerbosity::Error,
-				TEXT("InvalidScrollBoxStyleConfiguration"),
-				ScrollBox->GetPathName(),
-				FText::Format(
-					LOCTEXT(
-						"InvalidScrollBoxStyleConfiguration",
-						"ScrollBox '{0}' has an invalid style configuration: {1}"),
-					FText::FromString(ScrollBox->GetPathName()),
-					FText::FromString(StyleResolutionError)));
-		}
+			if (Override.Mode != ELunarFeedbackOverrideMode::UseDataAsset)
+			{
+				return;
+			}
+			if (!IsValid(Widget->HapticFeedbackAsset))
+			{
+				AddMessage(
+					ELunarConsoleMessageVerbosity::Warning,
+					FName(*FString::Printf(TEXT("MissingHapticFeedbackAsset_%s"), EventName)),
+					Widget->GetPathName(),
+					FText::Format(
+						LOCTEXT(
+							"MissingHapticFeedbackAsset",
+							"Widget '{0}' uses Data Asset haptic feedback for '{1}', but HapticFeedbackAsset is not assigned. Assign a haptic feedback asset, choose Custom/Use Global, or disable this event."),
+						FText::FromString(Widget->GetPathName()),
+						FText::FromString(EventName)));
+				return;
+			}
+			if (!DataAssetEntry || !IsValid(DataAssetEntry->Effect))
+			{
+				AddMessage(
+					ELunarConsoleMessageVerbosity::Warning,
+					FName(*FString::Printf(TEXT("MissingHapticFeedbackEntry_%s"), EventName)),
+					Widget->GetPathName(),
+					FText::Format(
+						LOCTEXT(
+							"MissingHapticFeedbackEntry",
+							"Haptic feedback asset '{0}' has no effect for '{1}', requested by widget '{2}'. Configure the entry, choose Custom/Use Global, or disable this event. Lunar intentionally does not fall back."),
+						FText::FromString(Widget->HapticFeedbackAsset->GetPathName()),
+						FText::FromString(EventName),
+						FText::FromString(Widget->GetPathName())));
+			}
+		};
+		ValidateHapticFeedback(Widget->HapticOverrides.NavigationSelected, Widget->HapticFeedbackAsset ? &Widget->HapticFeedbackAsset->Haptics.NavigationSelected : nullptr, TEXT("Navigation Selected"));
+		ValidateHapticFeedback(Widget->HapticOverrides.NavigationPressed, Widget->HapticFeedbackAsset ? &Widget->HapticFeedbackAsset->Haptics.NavigationPressed : nullptr, TEXT("Navigation Pressed"));
+		ValidateHapticFeedback(Widget->HapticOverrides.NavigationClicked, Widget->HapticFeedbackAsset ? &Widget->HapticFeedbackAsset->Haptics.NavigationClicked : nullptr, TEXT("Navigation Clicked"));
+		ValidateHapticFeedback(Widget->HapticOverrides.NavigationRejected, Widget->HapticFeedbackAsset ? &Widget->HapticFeedbackAsset->Haptics.NavigationRejected : nullptr, TEXT("Navigation Rejected"));
 	}
 
 	ULunarNavigableWidget* ReachabilityRoot = nullptr;
@@ -4286,86 +4759,6 @@ TArray<FLunarNavigationValidationMessage> ULunarNavigationSubsystem::ValidateNav
 	}
 
 	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	if (Settings)
-	{
-		auto ValidateDefaultStyle = [&AddGlobalMessage](
-			const auto& StyleReference,
-			const TCHAR* FieldName,
-			const UClass* ExpectedStyleClass)
-		{
-			if (StyleReference.IsNull())
-			{
-				return;
-			}
-			ULunarWidgetStyleAsset* Style = StyleReference.LoadSynchronous();
-			const FString OwnerPath = StyleReference.ToSoftObjectPath().ToString();
-			if (!Style)
-			{
-				AddGlobalMessage(
-					ELunarConsoleMessageVerbosity::Error,
-					TEXT("UnresolvedDefaultStyle"),
-					OwnerPath,
-					FText::Format(
-						LOCTEXT(
-							"UnresolvedDefaultStyle",
-							"Default style field '{0}' cannot load asset '{1}'. Clear or repair the reference."),
-						FText::FromString(FieldName),
-						FText::FromString(OwnerPath)));
-				return;
-			}
-
-			FString CyclePath;
-			if (LunarNavigationSubsystem_Private::StyleChainContainsCycle(Style, CyclePath))
-			{
-				AddGlobalMessage(
-					ELunarConsoleMessageVerbosity::Error,
-					TEXT("StyleParentCycle"),
-					Style->GetPathName(),
-					FText::Format(
-						LOCTEXT(
-							"DefaultStyleParentCycle",
-							"Default style field '{0}' contains a ParentStyle cycle repeating '{1}'. Break the cycle."),
-						FText::FromString(FieldName),
-						FText::FromString(CyclePath)));
-			}
-
-			FString IncompatibleStylePath;
-			FString ActualClassName;
-			if (LunarNavigationSubsystem_Private::StyleChainContainsIncompatibleType(
-				Style,
-				ExpectedStyleClass,
-				IncompatibleStylePath,
-				ActualClassName))
-			{
-				AddGlobalMessage(
-					ELunarConsoleMessageVerbosity::Error,
-					TEXT("IncompatibleDefaultStyleParent"),
-					IncompatibleStylePath,
-					FText::Format(
-						LOCTEXT(
-							"IncompatibleDefaultStyleParent",
-							"Default style field '{0}' contains incompatible style '{1}': expected {2}, found {3}. Replace the incompatible ParentStyle."),
-						FText::FromString(FieldName),
-						FText::FromString(IncompatibleStylePath),
-						FText::FromString(GetNameSafe(ExpectedStyleClass)),
-						FText::FromString(ActualClassName)));
-			}
-		};
-
-		const FLunarNavigationDefaultStyleSettings& DefaultStyles = Settings->Navigation.DefaultStyles;
-		ValidateDefaultStyle(DefaultStyles.DefaultButtonStyle, TEXT("DefaultButtonStyle"), ULunarButtonStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultSliderStyle, TEXT("DefaultSliderStyle"), ULunarSliderStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultOptionSliderStyle, TEXT("DefaultOptionSliderStyle"), ULunarOptionSliderStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultSwitchStyle, TEXT("DefaultSwitchStyle"), ULunarSwitchStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultRadioStyle, TEXT("DefaultRadioStyle"), ULunarRadioStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultScrollBoxStyle, TEXT("DefaultScrollBoxStyle"), ULunarScrollBoxStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultListViewStyle, TEXT("DefaultListViewStyle"), ULunarListViewStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultComboBoxStyle, TEXT("DefaultComboBoxStyle"), ULunarComboBoxStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultContextMenuStyle, TEXT("DefaultContextMenuStyle"), ULunarContextMenuStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultTabsStyle, TEXT("DefaultTabsStyle"), ULunarTabsStyleAsset::StaticClass());
-		ValidateDefaultStyle(DefaultStyles.DefaultInputPromptStyle, TEXT("DefaultInputPromptStyle"), ULunarInputPromptStyleAsset::StaticClass());
-	}
-
 	auto ResolveDefaultIconSet = [&AddGlobalMessage](
 		const TSoftObjectPtr<ULunarInputIconSet>& IconSetReference,
 		const TCHAR* FieldName) -> ULunarInputIconSet*
@@ -4443,7 +4836,25 @@ TArray<FLunarNavigationValidationMessage> ULunarNavigationSubsystem::ValidateNav
 						FText::FromName(Request.ActionTag.GetTagName())));
 				continue;
 			}
-			if (Request.IconOverride.IsSet())
+			if (Request.bOverrideIcon)
+			{
+				if (!Request.IconOverride.GetResourceObject()
+					&& Request.IconOverride.GetResourceName().IsNone())
+				{
+					AddMessage(
+						ELunarConsoleMessageVerbosity::Error,
+						TEXT("InvalidPromptIconOverride"),
+						Widget->GetPathName(),
+						FText::Format(
+							LOCTEXT(
+								"InvalidPromptIconOverrideValidation",
+								"Prompt request for ActionTag '{0}' on widget '{1}' enables Icon Override, but its brush has no Texture or Material resource."),
+							FText::FromName(Request.ActionTag.GetTagName()),
+							FText::FromString(Widget->GetPathName())));
+				}
+				continue;
+			}
+			if (!Request.bRequireIcon)
 			{
 				continue;
 			}
@@ -4768,13 +5179,17 @@ FString ULunarNavigationSubsystem::BuildNavigationGraphText(
 		}
 
 		Result += FString::Printf(
-			TEXT("%s %s Id=%s Group=%s Priority=%d Eligible=%s"),
+			TEXT("%s %s Id=%s Group=%s Priority=%d Eligible=%s Input=M:%s T:%s K:%s G:%s"),
 			Widget == SelectedWidget ? TEXT(">") : TEXT("-"),
 			*Widget->GetPathName(),
 			*Widget->GetNavigationId().ToString(),
 			*Widget->GetNavigationGroup().ToString(),
 			Widget->GetNavigationPriority(),
-			IsWidgetEligibleInGraphScope(Widget, Scope) ? TEXT("true") : TEXT("false"));
+			IsWidgetEligibleInGraphScope(Widget, Scope) ? TEXT("true") : TEXT("false"),
+			Widget->IsMouseInputAllowed() ? TEXT("on") : TEXT("off"),
+			Widget->IsTouchInputAllowed() ? TEXT("on") : TEXT("off"),
+			Widget->IsKeyboardInputAllowed() ? TEXT("on") : TEXT("off"),
+			Widget->IsGamepadInputAllowed() ? TEXT("on") : TEXT("off"));
 
 		for (const ELunarNavigationDirection Direction : Directions)
 		{

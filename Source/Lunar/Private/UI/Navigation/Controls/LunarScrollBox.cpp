@@ -3,21 +3,19 @@
 #include "UI/Navigation/Controls/LunarScrollBox.h"
 
 #include "Components/ScrollBoxSlot.h"
+#include "Curves/CurveFloat.h"
 #include "Engine/LocalPlayer.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
-#include "Kismet/KismetMathLibrary.h"
 #include "Settings/LunarSettings.h"
 #include "Types/SlateConstants.h"
 #include "UI/Navigation/Core/LunarNavigationScope.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
-#include "UI/Navigation/Styles/LunarScrollBoxStyleAsset.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
-#include "UI/Navigation/Types/LunarGameplayTags.h"
+#include "UObject/ConstructorHelpers.h"
 
 /**
  * @file LunarScrollBox.cpp
- * @brief Lunar scroll-container input ownership, reveal scrolling, and style transitions
+ * @brief Lunar scroll-container input ownership, reveal scrolling, and native presentation
  * @ingroup LunarNavigationControls
  */
 
@@ -35,6 +33,71 @@ public:
 	void SetLunarOwner(ULunarScrollBox* InOwner)
 	{
 		LunarOwner = InOwner;
+	}
+
+	/**
+	 * @brief Resolves a descendant offset from freshly arranged Slate geometry
+	 * @param WidgetToReveal Descendant Slate widget to locate
+	 * @param ViewportPadding Safe viewport padding supplied by the UMG owner
+	 * @param OutTargetOffset Receives the minimum clamped desired offset
+	 * @return True when the descendant and valid viewport geometry were found
+	 */
+	bool CalculateLunarDescendantOffset(
+		const TSharedPtr<SWidget>& WidgetToReveal,
+		const FMargin& ViewportPadding,
+		float& OutTargetOffset)
+	{
+		if (!WidgetToReveal.IsValid())
+		{
+			return false;
+		}
+
+		const FGeometry& ScrollGeometry = GetTickSpaceGeometry();
+		const FVector2D ViewportSize = ScrollGeometry.GetLocalSize();
+		const bool bHorizontal = GetOrientation() == Orient_Horizontal;
+		const float ViewportExtent = bHorizontal ? ViewportSize.X : ViewportSize.Y;
+		if (ViewportExtent <= UE_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		TSet<TSharedRef<SWidget>> WidgetsToFind;
+		WidgetsToFind.Add(WidgetToReveal.ToSharedRef());
+		TMap<TSharedRef<SWidget>, FArrangedWidget> ArrangedDescendants;
+		FindChildGeometries(ScrollGeometry, WidgetsToFind, ArrangedDescendants);
+		const FArrangedWidget* ArrangedWidget = ArrangedDescendants.Find(WidgetToReveal.ToSharedRef());
+		if (!ArrangedWidget)
+		{
+			return false;
+		}
+
+		const FVector2D TargetStartLocal = ScrollGeometry.AbsoluteToLocal(
+			ArrangedWidget->Geometry.GetAbsolutePosition());
+		const FVector2D TargetSize = ArrangedWidget->Geometry.GetLocalSize();
+		const float TargetStart = bHorizontal ? TargetStartLocal.X : TargetStartLocal.Y;
+		const float TargetEnd = TargetStart + (bHorizontal ? TargetSize.X : TargetSize.Y);
+		const float LeadingPadding = FMath::Max(
+			0.0f,
+			bHorizontal ? ViewportPadding.Left : ViewportPadding.Top);
+		const float TrailingPadding = FMath::Max(
+			0.0f,
+			bHorizontal ? ViewportPadding.Right : ViewportPadding.Bottom);
+		const float VisibleStart = FMath::Min(LeadingPadding, ViewportExtent);
+		const float VisibleEnd = FMath::Max(VisibleStart, ViewportExtent - TrailingPadding);
+
+		float RequiredDelta = 0.0f;
+		if (TargetStart < VisibleStart)
+		{
+			RequiredDelta = TargetStart - VisibleStart;
+		}
+		else if (TargetEnd > VisibleEnd)
+		{
+			RequiredDelta = TargetEnd - VisibleEnd;
+		}
+
+		const float MaximumOffset = FMath::Max(0.0f, GetScrollOffsetOfEnd());
+		OutTargetOffset = FMath::Clamp(GetScrollOffset() + RequiredDelta, 0.0f, MaximumOffset);
+		return true;
 	}
 
 	/**
@@ -112,34 +175,6 @@ public:
 	}
 
 	/**
-	 * @brief Updates hover interaction state when a mouse enters an owned container
-	 * @param MyGeometry Current widget geometry
-	 * @param MouseEvent Mouse-enter event
-	 */
-	virtual void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
-	{
-		SScrollBox::OnMouseEnter(MyGeometry, MouseEvent);
-		if (ULunarScrollBox* Owner = LunarOwner.Get();
-			Owner && Owner->IsOwnedByActiveScope() && !MouseEvent.IsTouchEvent())
-		{
-			Owner->SetDirectInteractionState(ELunarUIInteractionState::PointerHovered);
-		}
-	}
-
-	/**
-	 * @brief Clears hover state after the pointer leaves without capture
-	 * @param MouseEvent Mouse-leave event
-	 */
-	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
-	{
-		SScrollBox::OnMouseLeave(MouseEvent);
-		if (ULunarScrollBox* Owner = LunarOwner.Get(); Owner && !HasMouseCapture())
-		{
-			Owner->SetDirectInteractionState(ELunarUIInteractionState::PointerNormal);
-		}
-	}
-
-	/**
 	 * @brief Begins native touch or right-drag scrolling for an owned container
 	 * @param MyGeometry Current widget geometry
 	 * @param MouseEvent Mouse or touch press event
@@ -152,13 +187,7 @@ public:
 			return FReply::Unhandled();
 		}
 
-		const FReply Reply = SScrollBox::OnMouseButtonDown(MyGeometry, MouseEvent);
-		if (ULunarScrollBox* Owner = LunarOwner.Get();
-			Owner && (MouseEvent.IsTouchEvent() || MouseEvent.GetEffectingButton() == EKeys::RightMouseButton))
-		{
-			Owner->SetDirectInteractionState(ELunarUIInteractionState::PointerPressed);
-		}
-		return Reply;
+		return SScrollBox::OnMouseButtonDown(MyGeometry, MouseEvent);
 	}
 
 	/**
@@ -176,10 +205,6 @@ public:
 			{
 				EndInertialScrolling();
 			}
-			Owner->SetDirectInteractionState(
-				!MouseEvent.IsTouchEvent() && MyGeometry.IsUnderLocation(MouseEvent.GetScreenSpacePosition())
-					? ELunarUIInteractionState::PointerHovered
-					: ELunarUIInteractionState::PointerNormal);
 		}
 		return Reply;
 	}
@@ -199,22 +224,8 @@ public:
 			{
 				EndInertialScrolling();
 			}
-			Owner->SetDirectInteractionState(ELunarUIInteractionState::PointerNormal);
 		}
 		return Reply;
-	}
-
-	/**
-	 * @brief Restores normal interaction state after native pointer capture is lost
-	 * @param CaptureLostEvent Capture-loss context
-	 */
-	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override
-	{
-		SScrollBox::OnMouseCaptureLost(CaptureLostEvent);
-		if (ULunarScrollBox* Owner = LunarOwner.Get())
-		{
-			Owner->SetDirectInteractionState(ELunarUIInteractionState::PointerNormal);
-		}
 	}
 
 private:
@@ -284,130 +295,6 @@ namespace LunarScrollBox_Private
 		return false;
 	}
 
-	/**
-	 * @brief Applies supported common presentation fields to a scroll container
-	 * @param ScrollBox Scroll container to update
-	 * @param Patch Common style patch to apply
-	 */
-	void ApplyCommonStylePatch(ULunarScrollBox& ScrollBox, const FLunarCommonStylePatch& Patch)
-	{
-		if (Patch.bOverrideOpacity)
-		{
-			ScrollBox.SetRenderOpacity(FMath::Clamp(Patch.Opacity, 0.0f, 1.0f));
-		}
-		if (Patch.bOverrideRenderTransform)
-		{
-			ScrollBox.SetRenderTransform(Patch.RenderTransform);
-		}
-		if (Patch.bOverrideRenderTransformPivot)
-		{
-			ScrollBox.SetRenderTransformPivot(Patch.RenderTransformPivot);
-		}
-	}
-
-	/**
-	 * @brief Applies common and ScrollBox-specific fields from a materialized style
-	 * @param ScrollBox Scroll container to update
-	 * @param Patch Materialized style snapshot
-	 */
-	void ApplyStylePatch(ULunarScrollBox& ScrollBox, const FLunarScrollBoxStylePatch& Patch)
-	{
-		ApplyCommonStylePatch(ScrollBox, Patch.Common);
-		if (Patch.bOverrideScrollBarStyle)
-		{
-			ScrollBox.SetWidgetBarStyle(Patch.ScrollBarStyle);
-		}
-		if (Patch.bOverrideScrollBarPadding)
-		{
-			ScrollBox.SetScrollbarPadding(Patch.ScrollBarPadding);
-		}
-	}
-
-	/**
-	 * @brief Interpolates every component of a Slate margin
-	 * @param Source Transition source margin
-	 * @param Target Transition target margin
-	 * @param Alpha Normalized interpolation alpha
-	 * @return Interpolated margin
-	 */
-	FMargin InterpolateMargin(const FMargin& Source, const FMargin& Target, const float Alpha)
-	{
-		return FMargin(
-			FMath::Lerp(Source.Left, Target.Left, Alpha),
-			FMath::Lerp(Source.Top, Target.Top, Alpha),
-			FMath::Lerp(Source.Right, Target.Right, Alpha),
-			FMath::Lerp(Source.Bottom, Target.Bottom, Alpha));
-	}
-
-	/**
-	 * @brief Interpolates continuous fields between two ScrollBox styles
-	 * @param Source Transition source
-	 * @param Target Transition target
-	 * @param Alpha Normalized interpolation alpha
-	 * @return Interpolated style snapshot
-	 */
-	FLunarScrollBoxStylePatch InterpolateStylePatch(
-		const FLunarScrollBoxStylePatch& Source,
-		const FLunarScrollBoxStylePatch& Target,
-		const float Alpha)
-	{
-		FLunarScrollBoxStylePatch Result = Target;
-		Result.Common = LunarStyleResolver::InterpolateCommonStylePatch(Source.Common, Target.Common, Alpha);
-		if (Source.bOverrideScrollBarPadding && Target.bOverrideScrollBarPadding)
-		{
-			Result.ScrollBarPadding = InterpolateMargin(Source.ScrollBarPadding, Target.ScrollBarPadding, Alpha);
-		}
-		return Result;
-	}
-
-	/**
-	 * @brief Compares two materialized ScrollBox style patches
-	 * @param A First style
-	 * @param B Second style
-	 * @return True when all common and specialized fields are equivalent
-	 */
-	bool AreStylePatchesEquivalent(
-		const FLunarScrollBoxStylePatch& A,
-		const FLunarScrollBoxStylePatch& B)
-	{
-		if (!LunarStyleResolver::AreCommonStylesEquivalent(A.Common, B.Common)
-			|| A.bOverrideScrollBarStyle != B.bOverrideScrollBarStyle
-			|| A.bOverrideScrollBarPadding != B.bOverrideScrollBarPadding)
-		{
-			return false;
-		}
-		if (A.bOverrideScrollBarStyle
-			&& !FScrollBarStyle::StaticStruct()->CompareScriptStruct(&A.ScrollBarStyle, &B.ScrollBarStyle, 0))
-		{
-			return false;
-		}
-		return !A.bOverrideScrollBarPadding || A.ScrollBarPadding == B.ScrollBarPadding;
-	}
-
-	/**
-	 * @brief Copies brushes, fonts, transition data, and bar style from a logical target
-	 * @param InOutStyle Interpolated style to update
-	 * @param LogicalTarget Style supplying discrete fields
-	 */
-	void ApplyDiscreteStyleFields(
-		FLunarScrollBoxStylePatch& InOutStyle,
-		const FLunarScrollBoxStylePatch& LogicalTarget)
-	{
-	/** Copies one non-interpolated common style field and its override flag. */
-	#define LUNAR_COPY_SCROLL_DISCRETE_COMMON(FieldName) \
-		InOutStyle.Common.bOverride##FieldName = LogicalTarget.Common.bOverride##FieldName; \
-		InOutStyle.Common.FieldName = LogicalTarget.Common.FieldName;
-
-		LUNAR_COPY_SCROLL_DISCRETE_COMMON(BackgroundBrush)
-		LUNAR_COPY_SCROLL_DISCRETE_COMMON(BorderBrush)
-		LUNAR_COPY_SCROLL_DISCRETE_COMMON(ForegroundBrush)
-		LUNAR_COPY_SCROLL_DISCRETE_COMMON(Font)
-
-#undef LUNAR_COPY_SCROLL_DISCRETE_COMMON
-		InOutStyle.Common.Transition = LogicalTarget.Common.Transition;
-		InOutStyle.bOverrideScrollBarStyle = LogicalTarget.bOverrideScrollBarStyle;
-		InOutStyle.ScrollBarStyle = LogicalTarget.ScrollBarStyle;
-	}
 }
 
 ULunarScrollBox::ULunarScrollBox(const FObjectInitializer& ObjectInitializer)
@@ -415,13 +302,58 @@ ULunarScrollBox::ULunarScrollBox(const FObjectInitializer& ObjectInitializer)
 {
 	if (const ULunarSettings* Settings = GetDefault<ULunarSettings>())
 	{
-		ScrollIntoViewSettings = Settings->Navigation.Behavior.DefaultScrollIntoViewSettings;
 		bAllowScrollChaining = Settings->Navigation.Behavior.bAllowScrollChainingByDefault;
 	}
 
+	static ConstructorHelpers::FObjectFinder<UCurveFloat> DefaultInterpolationCurve(
+		TEXT("/Lunar/Curves/Float/CF_EaseOutExpo.CF_EaseOutExpo"));
+	if (DefaultInterpolationCurve.Succeeded())
+	{
+		ScrollInterpolationCurve = DefaultInterpolationCurve.Object;
+	}
+
+	NormalizeInterpolationSettings();
+	ScrollBarPresentationStyle = GetWidgetBarStyle();
+	ScrollBarPresentationPadding = GetScrollbarPadding();
 	ApplyRuntimePolicies();
+	ApplyNativePresentation();
 }
 
+#if WITH_EDITOR
+const FText ULunarScrollBox::GetPaletteCategory()
+{
+	return NSLOCTEXT("LunarNavigationPalette", "Category", "Lunar Navigation");
+}
+#endif
+
+void ULunarScrollBox::SetScrollBarPresentationStyle(const FScrollBarStyle& NewStyle)
+{
+	ScrollBarPresentationStyle = NewStyle;
+	ApplyNativePresentation();
+}
+
+void ULunarScrollBox::SetScrollBarPresentationPadding(const FMargin NewPadding)
+{
+	ScrollBarPresentationPadding = NewPadding;
+	ApplyNativePresentation();
+}
+
+void ULunarScrollBox::ConfigureScrollBoxPresentation(
+	const FScrollBarStyle& NewStyle,
+	const FMargin NewPadding)
+{
+	ScrollBarPresentationStyle = NewStyle;
+	ScrollBarPresentationPadding = NewPadding;
+	ApplyNativePresentation();
+}
+
+void ULunarScrollBox::GetScrollBoxPresentation(
+	FScrollBarStyle& OutStyle,
+	FMargin& OutPadding) const
+{
+	OutStyle = ScrollBarPresentationStyle;
+	OutPadding = ScrollBarPresentationPadding;
+}
 void ULunarScrollBox::ScrollWidgetIntoLunarView(UWidget* WidgetToReveal)
 {
 	if (!IsValidLunarScrollTarget(WidgetToReveal))
@@ -444,13 +376,12 @@ void ULunarScrollBox::ScrollWidgetIntoLunarView(UWidget* WidgetToReveal)
 	CancelLunarScrollInternal(false, false);
 	EndInertialScrolling();
 
-	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
-	if (ScrollIntoViewSettings.Mode == ELunarScrollIntoViewMode::Immediate || bReduceMotion)
+	NormalizeInterpolationSettings();
+	if (ShouldSnapScrollIntoView())
 	{
 		ActiveScrollTarget = WidgetToReveal;
 		bLunarScrollActive = true;
-		OnLunarScrollStarted.Broadcast();
+		OnLunarScrollStarted.Broadcast(this);
 
 		if (bLunarScrollActive)
 		{
@@ -460,7 +391,7 @@ void ULunarScrollBox::ScrollWidgetIntoLunarView(UWidget* WidgetToReveal)
 		return;
 	}
 
-	StartSmoothLunarScroll(WidgetToReveal, TargetOffset);
+	StartInterpolatedLunarScroll(WidgetToReveal, TargetOffset);
 }
 
 void ULunarScrollBox::CancelLunarScroll()
@@ -476,16 +407,15 @@ bool ULunarScrollBox::IsLunarScrollActive() const
 void ULunarScrollBox::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
+	NormalizeInterpolationSettings();
 	ApplyRuntimePolicies();
-	ApplyResolvedStyle();
+	ApplyNativePresentation();
 }
 
 void ULunarScrollBox::ReleaseSlateResources(const bool bReleaseChildren)
 {
 	OnUserScrolled.RemoveDynamic(this, &ULunarScrollBox::HandleNativeUserScrolled);
 	CancelLunarScrollInternal(false, true);
-	StopStyleTransition();
-	bHasDisplayedStyle = false;
 	UnregisterFromNavigationSubsystem();
 	Super::ReleaseSlateResources(bReleaseChildren);
 }
@@ -494,13 +424,13 @@ void ULunarScrollBox::BeginDestroy()
 {
 	OnUserScrolled.RemoveDynamic(this, &ULunarScrollBox::HandleNativeUserScrolled);
 	CancelLunarScrollInternal(false, true);
-	StopStyleTransition();
 	UnregisterFromNavigationSubsystem();
 	Super::BeginDestroy();
 }
 
 TSharedRef<SWidget> ULunarScrollBox::RebuildWidget()
 {
+	ApplyNativePresentation();
 	TSharedRef<SLunarNavigationScrollBox> SlateScrollBox = MakeShared<SLunarNavigationScrollBox>();
 	SlateScrollBox->SetLunarOwner(this);
 	SlateScrollBox->Construct(
@@ -543,6 +473,7 @@ void ULunarScrollBox::OnWidgetRebuilt()
 	LastAuthorizedScrollOffset = GetScrollOffset();
 	OnUserScrolled.AddUniqueDynamic(this, &ULunarScrollBox::HandleNativeUserScrolled);
 	RegisterWithNavigationSubsystem();
+	ApplyNativePresentation();
 }
 
 void ULunarScrollBox::HandleNativeUserScrolled(const float CurrentOffset)
@@ -607,218 +538,15 @@ void ULunarScrollBox::UnregisterFromNavigationSubsystem()
 	RegisteredNavigationSubsystem.Reset();
 }
 
-void ULunarScrollBox::ApplyResolvedStyle()
+void ULunarScrollBox::ApplyNativePresentation()
 {
-	FLunarUIVisualState VisualState;
-	VisualState.ValueStateTag = LunarGameplayTags::UI_State_Value_Normal.GetTag();
-	VisualState.InteractionState = DirectInteractionState;
-	if (const ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
-	{
-		VisualState.InputDevice = NavigationSubsystem->GetLastInputDevice();
-	}
-
-	FLunarScrollBoxStylePatch ResolvedStyle;
-	FString StyleError;
-	if (LunarStyleResolver::ResolveScrollBoxStyle(StyleAsset, VisualState, ResolvedStyle, &StyleError))
-	{
-		ApplyStyleTarget(ResolvedStyle);
-	}
+	SetWidgetBarStyle(ScrollBarPresentationStyle);
+	SetScrollbarPadding(ScrollBarPresentationPadding);
 }
-
-void ULunarScrollBox::EnsureStyleBaseline()
-{
-	if (bHasStyleBaseline)
-	{
-		return;
-	}
-
-	StyleBaselineRenderOpacity = GetRenderOpacity();
-	StyleBaselineRenderTransform = GetRenderTransform();
-	StyleBaselineRenderTransformPivot = GetRenderTransformPivot();
-	StyleBaselineScrollBarStyle = GetWidgetBarStyle();
-	StyleBaselineScrollBarPadding = GetScrollbarPadding();
-	bHasStyleBaseline = true;
-}
-
-FLunarScrollBoxStylePatch ULunarScrollBox::MaterializeStyleSnapshot(
-	const FLunarScrollBoxStylePatch& ResolvedStyle) const
-{
-	FLunarScrollBoxStylePatch Result = ResolvedStyle;
-	if (!Result.Common.bOverrideOpacity)
-	{
-		Result.Common.bOverrideOpacity = true;
-		Result.Common.Opacity = StyleBaselineRenderOpacity;
-	}
-	if (!Result.Common.bOverrideRenderTransform)
-	{
-		Result.Common.bOverrideRenderTransform = true;
-		Result.Common.RenderTransform = StyleBaselineRenderTransform;
-	}
-	if (!Result.Common.bOverrideRenderTransformPivot)
-	{
-		Result.Common.bOverrideRenderTransformPivot = true;
-		Result.Common.RenderTransformPivot = StyleBaselineRenderTransformPivot;
-	}
-	if (!Result.bOverrideScrollBarStyle)
-	{
-		Result.bOverrideScrollBarStyle = true;
-		Result.ScrollBarStyle = StyleBaselineScrollBarStyle;
-	}
-	if (!Result.bOverrideScrollBarPadding)
-	{
-		Result.bOverrideScrollBarPadding = true;
-		Result.ScrollBarPadding = StyleBaselineScrollBarPadding;
-	}
-	return Result;
-}
-
-void ULunarScrollBox::ApplyStyleTarget(const FLunarScrollBoxStylePatch& NewTarget)
-{
-	EnsureStyleBaseline();
-	const FLunarScrollBoxStylePatch MaterializedTarget = MaterializeStyleSnapshot(NewTarget);
-	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
-	if (bReduceMotion)
-	{
-		StopStyleTransition();
-		TransitionSourceStyle = MaterializedTarget;
-		TransitionTargetStyle = MaterializedTarget;
-		LogicalTargetStyle = MaterializedTarget;
-		ApplyDisplayedStyle(MaterializedTarget);
-		return;
-	}
-	if (bHasDisplayedStyle
-		&& LunarScrollBox_Private::AreStylePatchesEquivalent(LogicalTargetStyle, MaterializedTarget))
-	{
-		return;
-	}
-
-	if (bStyleTransitionActive)
-	{
-		const bool bReturnsToSource = !bStyleTransitionReversing
-			&& LunarScrollBox_Private::AreStylePatchesEquivalent(TransitionSourceStyle, MaterializedTarget);
-		const bool bReturnsToForwardTarget = bStyleTransitionReversing
-			&& LunarScrollBox_Private::AreStylePatchesEquivalent(TransitionTargetStyle, MaterializedTarget);
-		if (bReturnsToSource || bReturnsToForwardTarget)
-		{
-			LogicalTargetStyle = MaterializedTarget;
-			bStyleTransitionReversing = bReturnsToSource;
-			FLunarScrollBoxStylePatch TransitionSnapshot = DisplayedStyle;
-			LunarScrollBox_Private::ApplyDiscreteStyleFields(
-				TransitionSnapshot,
-				bStyleTransitionReversing ? TransitionSourceStyle : TransitionTargetStyle);
-			ApplyDisplayedStyle(TransitionSnapshot);
-			return;
-		}
-	}
-
-	const bool bCanTransition = bHasDisplayedStyle
-		&& MaterializedTarget.Common.Transition.bEnabled
-		&& MaterializedTarget.Common.Transition.Duration > 0.0f;
-	if (!bCanTransition)
-	{
-		StopStyleTransition();
-		TransitionSourceStyle = MaterializedTarget;
-		TransitionTargetStyle = MaterializedTarget;
-		LogicalTargetStyle = MaterializedTarget;
-		ApplyDisplayedStyle(MaterializedTarget);
-		return;
-	}
-
-	TransitionSourceStyle = DisplayedStyle;
-	TransitionTargetStyle = MaterializedTarget;
-	LogicalTargetStyle = MaterializedTarget;
-	StyleTransitionElapsed = 0.0f;
-	StyleTransitionDuration = MaterializedTarget.Common.Transition.Duration;
-	bStyleTransitionActive = true;
-	bStyleTransitionReversing = false;
-	if (!StyleTransitionTickerHandle.IsValid())
-	{
-		StyleTransitionTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateUObject(this, &ULunarScrollBox::TickStyleTransition));
-	}
-	ApplyDisplayedStyle(LunarScrollBox_Private::InterpolateStylePatch(
-		TransitionSourceStyle,
-		TransitionTargetStyle,
-		0.0f));
-}
-
-void ULunarScrollBox::ApplyDisplayedStyle(const FLunarScrollBoxStylePatch& NewDisplayedStyle)
-{
-	EnsureStyleBaseline();
-	DisplayedStyle = NewDisplayedStyle;
-	bHasDisplayedStyle = true;
-	SetRenderOpacity(StyleBaselineRenderOpacity);
-	SetRenderTransform(StyleBaselineRenderTransform);
-	SetRenderTransformPivot(StyleBaselineRenderTransformPivot);
-	SetWidgetBarStyle(StyleBaselineScrollBarStyle);
-	SetScrollbarPadding(StyleBaselineScrollBarPadding);
-	LunarScrollBox_Private::ApplyStylePatch(*this, DisplayedStyle);
-}
-
-bool ULunarScrollBox::TickStyleTransition(const float DeltaTime)
-{
-	if (!bStyleTransitionActive || StyleTransitionDuration <= UE_SMALL_NUMBER)
-	{
-		StyleTransitionTickerHandle.Reset();
-		return false;
-	}
-	if (const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-		Settings && Settings->Navigation.Accessibility.bReduceMotion)
-	{
-		ApplyDisplayedStyle(LogicalTargetStyle);
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		StyleTransitionTickerHandle.Reset();
-		return false;
-	}
-
-	const float Step = FMath::Max(0.0f, DeltaTime);
-	StyleTransitionElapsed += bStyleTransitionReversing ? -Step : Step;
-	StyleTransitionElapsed = FMath::Clamp(StyleTransitionElapsed, 0.0f, StyleTransitionDuration);
-	const float Alpha = StyleTransitionElapsed / StyleTransitionDuration;
-	const float EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-		0.0,
-		1.0,
-		Alpha,
-		TransitionTargetStyle.Common.Transition.Easing));
-	FLunarScrollBoxStylePatch TransitionSnapshot = LunarScrollBox_Private::InterpolateStylePatch(
-		TransitionSourceStyle,
-		TransitionTargetStyle,
-		EasedAlpha);
-	if (bStyleTransitionReversing)
-	{
-		LunarScrollBox_Private::ApplyDiscreteStyleFields(TransitionSnapshot, TransitionSourceStyle);
-	}
-	ApplyDisplayedStyle(TransitionSnapshot);
-
-	const bool bFinished = bStyleTransitionReversing ? Alpha <= 0.0f : Alpha >= 1.0f;
-	if (bFinished)
-	{
-		ApplyDisplayedStyle(bStyleTransitionReversing ? TransitionSourceStyle : TransitionTargetStyle);
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		StyleTransitionTickerHandle.Reset();
-		return false;
-	}
-	return true;
-}
-
-void ULunarScrollBox::StopStyleTransition()
-{
-	if (StyleTransitionTickerHandle.IsValid())
-	{
-		FTSTicker::RemoveTicker(StyleTransitionTickerHandle);
-		StyleTransitionTickerHandle.Reset();
-	}
-	bStyleTransitionActive = false;
-	bStyleTransitionReversing = false;
-	StyleTransitionElapsed = 0.0f;
-	StyleTransitionDuration = 0.0f;
-}
-
 void ULunarScrollBox::ApplyRuntimePolicies()
 {
+	SetOrientation(ScrollOrientation);
+
 	// A Lunar ScrollBox is a container and never participates in Lunar or native focus selection.
 	SetIsFocusable(false);
 	SetScrollWhenFocusChanges(EScrollWhenFocusChanges::NoScroll);
@@ -832,15 +560,6 @@ void ULunarScrollBox::ApplyRuntimePolicies()
 		bAllowScrollChaining
 			? EConsumeMouseWheel::WhenScrollingPossible
 			: EConsumeMouseWheel::Always);
-}
-
-void ULunarScrollBox::SetDirectInteractionState(const ELunarUIInteractionState NewInteractionState)
-{
-	if (DirectInteractionState != NewInteractionState)
-	{
-		DirectInteractionState = NewInteractionState;
-		ApplyResolvedStyle();
-	}
 }
 
 bool ULunarScrollBox::IsValidLunarScrollTarget(const UWidget* WidgetToReveal) const
@@ -875,62 +594,24 @@ bool ULunarScrollBox::IsValidLunarScrollTarget(const UWidget* WidgetToReveal) co
 	return bContainerInActiveScope && bTargetInActiveScope;
 }
 
-bool ULunarScrollBox::CalculateMinimumScrollOffset(const UWidget* WidgetToReveal, float& OutTargetOffset) const
+bool ULunarScrollBox::CalculateMinimumScrollOffset(
+	const UWidget* WidgetToReveal,
+	float& OutTargetOffset) const
 {
-	const FGeometry& ContainerGeometry = GetCachedGeometry();
-	const FGeometry& TargetGeometry = WidgetToReveal->GetCachedGeometry();
-	const FVector2D ContainerSize = ContainerGeometry.GetLocalSize();
-	const FVector2D TargetSize = TargetGeometry.GetLocalSize();
-	const bool bHorizontal = GetOrientation() == Orient_Horizontal;
-	const float ViewportExtent = bHorizontal ? ContainerSize.X : ContainerSize.Y;
-	if (ViewportExtent <= UE_SMALL_NUMBER || TargetSize.IsNearlyZero())
+	if (!WidgetToReveal || !MyScrollBox.IsValid())
 	{
 		return false;
 	}
 
-	const FVector2D TargetCorners[] =
-	{
-		FVector2D::ZeroVector,
-		FVector2D(TargetSize.X, 0.0f),
-		FVector2D(0.0f, TargetSize.Y),
-		TargetSize
-	};
-
-	float TargetMin = TNumericLimits<float>::Max();
-	float TargetMax = TNumericLimits<float>::Lowest();
-	for (const FVector2D& TargetCorner : TargetCorners)
-	{
-		const FVector2D ContainerLocal = ContainerGeometry.AbsoluteToLocal(TargetGeometry.LocalToAbsolute(TargetCorner));
-		const float AxisValue = bHorizontal ? ContainerLocal.X : ContainerLocal.Y;
-		TargetMin = FMath::Min(TargetMin, AxisValue);
-		TargetMax = FMath::Max(TargetMax, AxisValue);
-	}
-
-	const float LeadingPadding = FMath::Max(
-		0.0f,
-		bHorizontal ? ScrollIntoViewSettings.ViewportPadding.Left : ScrollIntoViewSettings.ViewportPadding.Top);
-	const float TrailingPadding = FMath::Max(
-		0.0f,
-		bHorizontal ? ScrollIntoViewSettings.ViewportPadding.Right : ScrollIntoViewSettings.ViewportPadding.Bottom);
-	const float VisibleStart = FMath::Min(LeadingPadding, ViewportExtent);
-	const float VisibleEnd = FMath::Max(VisibleStart, ViewportExtent - TrailingPadding);
-
-	const float CurrentOffset = GetScrollOffset();
-	float RequiredDelta = 0.0f;
-	if (TargetMin < VisibleStart)
-	{
-		RequiredDelta = TargetMin - VisibleStart;
-	}
-	else if (TargetMax > VisibleEnd)
-	{
-		RequiredDelta = TargetMax - VisibleEnd;
-	}
-
-	const float MaximumOffset = FMath::Max(0.0f, GetScrollOffsetOfEnd());
-	OutTargetOffset = FMath::Clamp(CurrentOffset + RequiredDelta, 0.0f, MaximumOffset);
-	return true;
+	const TSharedPtr<SWidget> TargetSlateWidget = WidgetToReveal->GetCachedWidget();
+	const TSharedPtr<SLunarNavigationScrollBox> LunarSlateScrollBox =
+		StaticCastSharedPtr<SLunarNavigationScrollBox>(MyScrollBox);
+	return LunarSlateScrollBox.IsValid()
+		&& LunarSlateScrollBox->CalculateLunarDescendantOffset(
+			TargetSlateWidget,
+			ViewportPadding,
+			OutTargetOffset);
 }
-
 void ULunarScrollBox::ApplyLunarScrollOffset(const float NewOffset)
 {
 	LastAuthorizedScrollOffset = NewOffset;
@@ -938,43 +619,19 @@ void ULunarScrollBox::ApplyLunarScrollOffset(const float NewOffset)
 	SetScrollOffset(NewOffset);
 }
 
-void ULunarScrollBox::StartSmoothLunarScroll(UWidget* WidgetToReveal, const float TargetOffset)
+void ULunarScrollBox::StartInterpolatedLunarScroll(UWidget* WidgetToReveal, const float TargetOffset)
 {
-	const float CurrentOffset = GetScrollOffset();
-	const float Distance = FMath::Abs(TargetOffset - CurrentOffset);
-	const float ConfiguredDuration = FMath::Max(0.0f, ScrollIntoViewSettings.TransitionDuration);
-	const float DurationFromSpeed = ScrollIntoViewSettings.ScrollSpeed > UE_SMALL_NUMBER
-		? Distance / ScrollIntoViewSettings.ScrollSpeed
-		: 0.0f;
-	const float EffectiveDuration = ConfiguredDuration > UE_SMALL_NUMBER
-		? ConfiguredDuration
-		: DurationFromSpeed;
-
-	if (EffectiveDuration <= UE_SMALL_NUMBER)
-	{
-		ActiveScrollTarget = WidgetToReveal;
-		bLunarScrollActive = true;
-		OnLunarScrollStarted.Broadcast();
-		if (bLunarScrollActive)
-		{
-			ApplyLunarScrollOffset(TargetOffset);
-			FinishLunarScroll(true, true);
-		}
-		return;
-	}
-
 	ActiveScrollTarget = WidgetToReveal;
-	LunarScrollStartOffset = CurrentOffset;
+	LunarScrollStartOffset = GetScrollOffset();
 	LunarScrollTargetOffset = TargetOffset;
 	LunarScrollElapsed = 0.0f;
-	LunarScrollDuration = EffectiveDuration;
 	LunarScrollTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-		FTickerDelegate::CreateUObject(this, &ULunarScrollBox::TickSmoothLunarScroll));
+		FTickerDelegate::CreateUObject(this, &ULunarScrollBox::TickInterpolatedLunarScroll));
 	bLunarScrollActive = true;
-	OnLunarScrollStarted.Broadcast();
+	OnLunarScrollStarted.Broadcast(this);
 }
 
-bool ULunarScrollBox::TickSmoothLunarScroll(const float DeltaTime)
+bool ULunarScrollBox::TickInterpolatedLunarScroll(const float DeltaTime)
 {
 	if (!bLunarScrollActive || !ActiveScrollTarget.IsValid() || !MyScrollBox.IsValid())
 	{
@@ -984,12 +641,13 @@ bool ULunarScrollBox::TickSmoothLunarScroll(const float DeltaTime)
 	}
 
 	LunarScrollElapsed += FMath::Max(0.0f, DeltaTime);
-	const float Alpha = LunarScrollDuration > UE_SMALL_NUMBER
-		? FMath::Clamp(LunarScrollElapsed / LunarScrollDuration, 0.0f, 1.0f)
-		: 1.0f;
-	ApplyLunarScrollOffset(FMath::Lerp(LunarScrollStartOffset, LunarScrollTargetOffset, Alpha));
+	const float Progress = FMath::Clamp(LunarScrollElapsed * ScrollInterpolationSpeed, 0.0f, 1.0f);
+	const float CurveAlpha = EvaluateScrollInterpolationCurve(Progress);
+	ApplyLunarScrollOffset(Progress >= 1.0f
+		? LunarScrollTargetOffset
+		: FMath::Lerp(LunarScrollStartOffset, LunarScrollTargetOffset, CurveAlpha));
 
-	if (Alpha >= 1.0f)
+	if (Progress >= 1.0f)
 	{
 		LunarScrollTickerHandle.Reset();
 		FinishLunarScroll(true, true);
@@ -997,6 +655,42 @@ bool ULunarScrollBox::TickSmoothLunarScroll(const float DeltaTime)
 	}
 
 	return true;
+}
+
+float ULunarScrollBox::EvaluateScrollInterpolationCurve(const float Progress) const
+{
+	const float SafeProgress = FMath::Clamp(Progress, 0.0f, 1.0f);
+	if (!IsValid(ScrollInterpolationCurve))
+	{
+		return SafeProgress;
+	}
+
+	const float EvaluatedAlpha = ScrollInterpolationCurve->GetFloatValue(SafeProgress);
+	return FMath::IsFinite(EvaluatedAlpha)
+		? FMath::Clamp(EvaluatedAlpha, 0.0f, 1.0f)
+		: SafeProgress;
+}
+
+bool ULunarScrollBox::ShouldSnapScrollIntoView() const
+{
+	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
+	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
+	bool bDesignerPreview = false;
+#if WITH_EDITOR
+	bDesignerPreview = IsDesignTime();
+#endif
+	return bDesignerPreview
+		|| bReduceMotion
+		|| !bInterpolateScrollIntoView
+		|| !FMath::IsFinite(ScrollInterpolationSpeed)
+		|| ScrollInterpolationSpeed <= 0.0f;
+}
+
+void ULunarScrollBox::NormalizeInterpolationSettings()
+{
+	ScrollInterpolationSpeed = FMath::IsFinite(ScrollInterpolationSpeed)
+		? FMath::Max(0.0f, ScrollInterpolationSpeed)
+		: 0.0f;
 }
 
 void ULunarScrollBox::FinishLunarScroll(
@@ -1013,14 +707,13 @@ void ULunarScrollBox::FinishLunarScroll(
 	bLunarScrollActive = false;
 	ActiveScrollTarget.Reset();
 	LunarScrollElapsed = 0.0f;
-	LunarScrollDuration = 0.0f;
 
 	if (bWasActive)
 	{
 		LunarScrollFinishedNative.Broadcast(this, bCompleted);
 		if (bBroadcastFinished)
 		{
-			OnLunarScrollFinished.Broadcast();
+			OnLunarScrollFinished.Broadcast(this);
 		}
 	}
 }
@@ -1039,9 +732,10 @@ void ULunarScrollBox::CancelLunarScrollInternal(
 
 void ULunarScrollBox::ReleaseOwnedPointerCapture()
 {
-	if (MyScrollBox.IsValid()
-		&& MyScrollBox->HasMouseCapture()
-		&& FSlateApplication::IsInitialized())
+	if (FSlateApplicationBase::IsInitialized()
+		&& FSlateApplication::IsInitialized()
+		&& MyScrollBox.IsValid()
+		&& MyScrollBox->HasMouseCapture())
 	{
 		if (const ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
 		{
@@ -1160,6 +854,7 @@ bool ULunarScrollBox::IsOwnedByActiveScope() const
 	return OwningLocalPlayer
 		&& NavigationSubsystem
 		&& NavigationSubsystem->GetLocalPlayer() == OwningLocalPlayer
+		&& NavigationSubsystem->IsScrollBoxAllowedByNavigationConfinement(this)
 		&& ScopeRoot
 		&& (this == ScopeRoot || LunarScrollBox_Private::IsDescendantOf(this, ScopeRoot));
 }

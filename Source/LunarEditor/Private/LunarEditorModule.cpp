@@ -6,6 +6,7 @@
  * @ingroup LunarNavigationEditor
  */
 
+#include "Blueprint/UserWidget.h"
 #include "Components/AutoRotator/LunarAutoRotatorEditorBridge.h"
 #include "Editor.h"
 #include "LevelEditorViewport.h"
@@ -14,7 +15,9 @@
 #include "UI/Navigation/Controls/LunarScrollBox.h"
 #include "UI/Navigation/Core/LunarNavigableWidget.h"
 #include "UI/Navigation/Core/LunarScreenWidget.h"
+#include "UI/Navigation/Creation/LunarAssetCreationMenu.h"
 #include "UI/Navigation/Customizations/LunarNavigableWidgetDetails.h"
+#include "UMGEditorProjectSettings.h"
 
 namespace
 {
@@ -59,6 +62,9 @@ public:
 	/** @brief Binds editor bridges and registers Lunar navigation Details customizations. */
 	virtual void StartupModule() override
 	{
+		AssetCreationMenu = MakeUnique<FLunarAssetCreationMenu>();
+		AssetCreationMenu->Register();
+		RegisterFavoriteWidgetParentClasses();
 		GetLunarResolveEditorViewportCameraLocationDelegate().BindStatic(&ResolveEditorViewportCameraLocation);
 
 		FPropertyEditorModule& PropertyEditorModule =
@@ -75,6 +81,11 @@ public:
 	/** @brief Unbinds editor bridges and unregisters Lunar navigation Details customizations. */
 	virtual void ShutdownModule() override
 	{
+		if (AssetCreationMenu)
+		{
+			AssetCreationMenu->Unregister();
+			AssetCreationMenu.Reset();
+		}
 		GetLunarResolveEditorViewportCameraLocationDelegate().Unbind();
 
 		if (FPropertyEditorModule* PropertyEditorModule =
@@ -87,6 +98,25 @@ public:
 			PropertyEditorModule->NotifyCustomizationModuleChanged();
 		}
 	}
+
+private:
+	/** @brief Adds only the two general-purpose Lunar bases to the Widget Blueprint COMMON picker. */
+	void RegisterFavoriteWidgetParentClasses()
+	{
+		UUMGEditorProjectSettings* Settings = GetMutableDefault<UUMGEditorProjectSettings>();
+		if (!Settings)
+		{
+			return;
+		}
+
+		Settings->FavoriteWidgetParentClasses.AddUnique(
+			TSoftClassPtr<UUserWidget>(ULunarScreenWidget::StaticClass()));
+		Settings->FavoriteWidgetParentClasses.AddUnique(
+			TSoftClassPtr<UUserWidget>(ULunarNavigableWidget::StaticClass()));
+	}
+
+	/** @brief Owns the Lunar Content Browser asset-creation menu registration. */
+	TUniquePtr<FLunarAssetCreationMenu> AssetCreationMenu;
 };
 
 IMPLEMENT_MODULE(FLunarEditorModule, LunarEditor)

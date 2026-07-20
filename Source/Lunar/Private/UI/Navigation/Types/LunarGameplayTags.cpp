@@ -19,6 +19,7 @@ namespace LunarGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Action_Back, "Lunar.UI.Action.Back", "Cancel the current interaction or close the top Lunar navigation scope.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Action_Increase, "Lunar.UI.Action.Increase", "Increase the value of the current Lunar control.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Action_Decrease, "Lunar.UI.Action.Decrease", "Decrease the value of the current Lunar control.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Action_Selection_Toggle, "Lunar.UI.Action.Selection.Toggle", "Toggle selection of the active item in a multi-select Lunar control.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_State_Value_Normal, "Lunar.UI.State.Value.Normal", "Normal Lunar control value state.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_State_Value_Disabled, "Lunar.UI.State.Value.Disabled", "Disabled Lunar control value state.");

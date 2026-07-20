@@ -22,7 +22,7 @@ class ULunarNavigableWidget;
 UENUM(BlueprintType)
 enum class ELunarPromptVisibilityPolicy : uint8
 {
-	WhenSelected UMETA(DisplayName = "When Selected"), ///< Show only while the owner is the Lunar Selection.
+	WhenSelected UMETA(DisplayName = "When Selected"), ///< Follow Lunar Selection during navigation presentation and pointer hover during pointer presentation.
 	Always UMETA(DisplayName = "Always"), ///< Show whenever the prompt owner is constructed and enabled.
 	Manual UMETA(DisplayName = "Manual") ///< Leave visibility under owner-authored presentation control.
 };
@@ -41,12 +41,20 @@ struct LUNAR_API FLunarPromptActionRequest
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Prompts")
 	FKey PreferredKey = EKeys::Invalid;
 
-	/** Optional display text supplied by this request. */
+	/** Optional display text supplied by this request. Defaults non-localizable; authors may enable localization explicitly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Prompts")
-	FText DisplayTextOverride;
+	FText DisplayTextOverride = FText::AsCultureInvariant(TEXT(""));
 
-	/** Optional icon supplied by this request. */
+	/** Whether a missing resolved icon is an authoring error; disable when the custom presentation does not require an icon. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Prompts")
+	bool bRequireIcon = true;
+
+	/** Enables IconOverride as the final prompt icon instead of resolving an Icon Set entry. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Prompts")
+	bool bOverrideIcon = false;
+
+	/** Optional resource-backed icon supplied by this request when bOverrideIcon is enabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Prompts", meta = (EditCondition = "bOverrideIcon", EditConditionHides))
 	FSlateBrush IconOverride;
 
 	/** Enables this prompt action request. */

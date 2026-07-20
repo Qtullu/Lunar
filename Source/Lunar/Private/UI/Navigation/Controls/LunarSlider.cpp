@@ -2,12 +2,13 @@
 
 #include "UI/Navigation/Controls/LunarSlider.h"
 
-#include "Kismet/KismetMathLibrary.h"
+#include "Curves/CurveFloat.h"
+#include "Engine/LocalPlayer.h"
 #include "Rendering/DrawElements.h"
-#include "Settings/LunarSettings.h"
 #include "Styling/CoreStyle.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
+#include "UI/Navigation/Core/LunarNavigationSubsystem.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SOverlay.h"
 
@@ -15,7 +16,7 @@
 
 /**
  * @file LunarSlider.cpp
- * @brief Continuous Lunar slider behavior, rendering, and style transitions
+ * @brief Continuous Lunar slider behavior and native-part rendering
  * @ingroup LunarNavigationControls
  */
 
@@ -23,182 +24,15 @@
 
 namespace LunarSlider_Private
 {
-	/** Default cross-axis thickness used when the style does not override the track. */
-	constexpr float DefaultTrackThickness = 4.0f;
-	/** Default square thumb extent used when no brush or size override is authored. */
-	constexpr float DefaultThumbExtent = 14.0f;
-	/** Default desired length of the native fallback presentation. */
+	/** Default desired length of the neutral native presentation. */
 	constexpr float DefaultSliderLength = 100.0f;
-	/** Default unfilled track tint. */
-	const FLinearColor DefaultTrackTint(0.16f, 0.16f, 0.16f, 1.0f);
-	/** Default filled track tint. */
-	const FLinearColor DefaultFillTint(0.10f, 0.48f, 0.95f, 1.0f);
-	/** Default slider-thumb tint. */
-	const FLinearColor DefaultThumbTint = FLinearColor::White;
 
-	/**
-	 * @brief Resolves an optional brush override to a drawable Slate brush
-	 * @param bOverrideBrush Whether Brush is explicitly authored
-	 * @param Brush Authored brush value
-	 * @return Authored brush or the CoreStyle white brush fallback
-	 */
-	const FSlateBrush* ResolveBrush(const bool bOverrideBrush, const FSlateBrush& Brush)
+	/** @param Brush Brush contributing tint. @param WidgetStyle Inherited style. @param Tint Authored tint. @return Final paint tint. */
+	FLinearColor ResolveTint(const FSlateBrush& Brush, const FWidgetStyle& WidgetStyle, const FLinearColor& Tint)
 	{
-		return bOverrideBrush ? &Brush : FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-	}
-
-	/**
-	 * @brief Resolves final paint tint from brush, authored, and inherited colors
-	 * @param Brush Brush contributing its own tint
-	 * @param WidgetStyle Inherited Slate widget style
-	 * @param bOverrideTint Whether Tint is explicitly authored
-	 * @param Tint Authored tint override
-	 * @param FallbackTint Tint used when no override exists
-	 * @return Multiplicative color used for painting
-	 */
-	FLinearColor ResolveTint(
-		const FSlateBrush& Brush,
-		const FWidgetStyle& WidgetStyle,
-		const bool bOverrideTint,
-		const FLinearColor& Tint,
-		const FLinearColor& FallbackTint)
-	{
-		return Brush.GetTint(WidgetStyle)
-			* (bOverrideTint ? Tint : FallbackTint)
-			* WidgetStyle.GetColorAndOpacityTint();
-	}
-
-	/**
-	 * @brief Resolves non-negative thumb size from size, brush, or default values
-	 * @param Style Specialized slider style patch
-	 * @return Effective thumb size
-	 */
-	FVector2D ResolveThumbSize(const FLunarSliderStylePatch& Style)
-	{
-		if (Style.bOverrideThumbSize)
-		{
-			return Style.ThumbSize.ComponentMax(FVector2D::ZeroVector);
-		}
-		if (Style.bOverrideThumbBrush && !Style.ThumbBrush.ImageSize.IsNearlyZero())
-		{
-			return FVector2D(
-				FMath::Max(0.0, static_cast<double>(Style.ThumbBrush.ImageSize.X)),
-				FMath::Max(0.0, static_cast<double>(Style.ThumbBrush.ImageSize.Y)));
-		}
-		return FVector2D(DefaultThumbExtent);
-	}
-
-	/**
-	 * @brief Fills missing specialized fields with native fallback values
-	 * @param ResolvedStyle Partially resolved slider style
-	 * @return Complete style snapshot suitable for transitions and painting
-	 */
-	FLunarSliderStylePatch MaterializeStyle(const FLunarSliderStylePatch& ResolvedStyle)
-	{
-		FLunarSliderStylePatch Result = ResolvedStyle;
-		if (!Result.bOverrideTrackBrush)
-		{
-			Result.bOverrideTrackBrush = true;
-			Result.TrackBrush = *FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-		}
-		if (!Result.bOverrideFillBrush)
-		{
-			Result.bOverrideFillBrush = true;
-			Result.FillBrush = *FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-		}
-		if (!Result.bOverrideThumbBrush)
-		{
-			Result.bOverrideThumbBrush = true;
-			Result.ThumbBrush = *FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-		}
-		if (!Result.bOverrideTrackTint)
-		{
-			Result.bOverrideTrackTint = true;
-			Result.TrackTint = DefaultTrackTint;
-		}
-		if (!Result.bOverrideFillTint)
-		{
-			Result.bOverrideFillTint = true;
-			Result.FillTint = DefaultFillTint;
-		}
-		if (!Result.bOverrideThumbTint)
-		{
-			Result.bOverrideThumbTint = true;
-			Result.ThumbTint = DefaultThumbTint;
-		}
-		if (!Result.bOverrideTrackThickness)
-		{
-			Result.bOverrideTrackThickness = true;
-			Result.TrackThickness = DefaultTrackThickness;
-		}
-		if (!Result.bOverrideThumbSize)
-		{
-			Result.bOverrideThumbSize = true;
-			Result.ThumbSize = ResolveThumbSize(ResolvedStyle);
-		}
-		return Result;
-	}
-
-	/**
-	 * @brief Compares two materialized slider styles
-	 * @param A First style
-	 * @param B Second style
-	 * @return True when all common and specialized fields are equivalent
-	 */
-	bool AreStylesEquivalent(const FLunarSliderStylePatch& A, const FLunarSliderStylePatch& B)
-	{
-		return LunarStyleResolver::AreCommonStylesEquivalent(A.Common, B.Common)
-			&& FSlateBrush::StaticStruct()->CompareScriptStruct(&A.TrackBrush, &B.TrackBrush, 0)
-			&& FSlateBrush::StaticStruct()->CompareScriptStruct(&A.FillBrush, &B.FillBrush, 0)
-			&& FSlateBrush::StaticStruct()->CompareScriptStruct(&A.ThumbBrush, &B.ThumbBrush, 0)
-			&& A.TrackTint == B.TrackTint
-			&& A.FillTint == B.FillTint
-			&& A.ThumbTint == B.ThumbTint
-			&& A.TrackThickness == B.TrackThickness
-			&& A.ThumbSize == B.ThumbSize;
-	}
-
-	/**
-	 * @brief Interpolates continuous fields between two slider styles
-	 * @param Source Transition source
-	 * @param Target Transition target
-	 * @param Alpha Normalized interpolation alpha
-	 * @return Interpolated style snapshot
-	 */
-	FLunarSliderStylePatch InterpolateStyle(
-		const FLunarSliderStylePatch& Source,
-		const FLunarSliderStylePatch& Target,
-		const float Alpha)
-	{
-		FLunarSliderStylePatch Result = Target;
-		Result.Common = LunarStyleResolver::InterpolateCommonStylePatch(
-			Source.Common,
-			Target.Common,
-			Alpha);
-		Result.TrackTint = FMath::Lerp(Source.TrackTint, Target.TrackTint, Alpha);
-		Result.FillTint = FMath::Lerp(Source.FillTint, Target.FillTint, Alpha);
-		Result.ThumbTint = FMath::Lerp(Source.ThumbTint, Target.ThumbTint, Alpha);
-		Result.TrackThickness = FMath::Lerp(Source.TrackThickness, Target.TrackThickness, Alpha);
-		Result.ThumbSize = FMath::Lerp(Source.ThumbSize, Target.ThumbSize, Alpha);
-		return Result;
-	}
-
-	/**
-	 * @brief Copies non-interpolated fields from the current logical target
-	 * @param InOutStyle Interpolated style to update
-	 * @param LogicalTarget Style supplying brushes and common discrete fields
-	 */
-	void ApplyDiscreteFields(
-		FLunarSliderStylePatch& InOutStyle,
-		const FLunarSliderStylePatch& LogicalTarget)
-	{
-		LunarStyleResolver::ApplyCommonDiscreteFields(InOutStyle.Common, LogicalTarget.Common);
-		InOutStyle.TrackBrush = LogicalTarget.TrackBrush;
-		InOutStyle.FillBrush = LogicalTarget.FillBrush;
-		InOutStyle.ThumbBrush = LogicalTarget.ThumbBrush;
+		return Brush.GetTint(WidgetStyle) * Tint * WidgetStyle.GetColorAndOpacityTint();
 	}
 }
-
 /**
  * @brief Native fallback presentation used until an owner-provided W_Slider composition is integrated
  * @ingroup LunarNavigationControls
@@ -209,20 +43,22 @@ public:
 	/** @cond DOXYGEN_INTERNAL */
 	/** Declarative arguments containing the owning Lunar slider. */
 	SLATE_BEGIN_ARGS(SLunarSliderPresentation) {}
-		/** Slider whose state and style should be rendered. */
+		/** Slider whose value and native parts should be rendered. */
 		SLATE_ARGUMENT(ULunarSlider*, Owner)
 	SLATE_END_ARGS()
 	/** @endcond */
 
 	/**
-	 * @brief Initializes the non-interactive fallback presentation
+	 * @brief Initializes the native slider presentation and pointer hit target
 	 * @param InArgs Declarative arguments containing the owner
 	 */
 	void Construct(const FArguments& InArgs)
 	{
 		Owner = InArgs._Owner;
 		SetCanTick(false);
-		SetVisibility(EVisibility::HitTestInvisible);
+		// SOverlay defaults to SelfHitTestInvisible. The native leaf must therefore remain
+		// hit-testable so an otherwise empty Slider Blueprint can receive pointer input.
+		SetVisibility(EVisibility::Visible);
 #if WITH_ACCESSIBILITY
 		SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
 #endif
@@ -241,13 +77,8 @@ public:
 			return FVector2D::ZeroVector;
 		}
 
-		const FLunarSliderStylePatch& Style = Slider->bHasDisplayedSliderStyle
-			? Slider->DisplayedSliderStyle
-			: Slider->ResolvedSliderStyle;
-		const FVector2D ThumbSize = LunarSlider_Private::ResolveThumbSize(Style);
-		const float TrackThickness = Style.bOverrideTrackThickness
-			? FMath::Max(0.0f, Style.TrackThickness)
-			: LunarSlider_Private::DefaultTrackThickness;
+		const FVector2D ThumbSize = Slider->ThumbSize.ComponentMax(FVector2D::ZeroVector);
+		const float TrackThickness = FMath::Max(0.0f, Slider->TrackThickness);
 		const float CrossAxisExtent = Slider->Orientation == Orient_Horizontal
 			? FMath::Max(TrackThickness, ThumbSize.Y)
 			: FMath::Max(TrackThickness, ThumbSize.X);
@@ -288,53 +119,24 @@ public:
 			return LayerId;
 		}
 
-		const FLunarSliderStylePatch& Style = Slider->bHasDisplayedSliderStyle
-			? Slider->DisplayedSliderStyle
-			: Slider->ResolvedSliderStyle;
-		const FSlateBrush* TrackBrush = LunarSlider_Private::ResolveBrush(
-			Style.bOverrideTrackBrush,
-			Style.TrackBrush);
-		const FSlateBrush* FillBrush = LunarSlider_Private::ResolveBrush(
-			Style.bOverrideFillBrush,
-			Style.FillBrush);
-		const FSlateBrush* ThumbBrush = LunarSlider_Private::ResolveBrush(
-			Style.bOverrideThumbBrush,
-			Style.ThumbBrush);
-		const FVector2D ThumbSize = LunarSlider_Private::ResolveThumbSize(Style).ComponentMin(LocalSize);
+		const FSlateBrush* TrackBrush = &Slider->TrackBrush;
+		const FSlateBrush* FillBrush = &Slider->FillBrush;
+		const FSlateBrush* ThumbBrush = &Slider->ThumbBrush;
+		const FVector2D ThumbSize = Slider->ThumbSize.ComponentMax(FVector2D::ZeroVector).ComponentMin(LocalSize);
 		const float TrackThickness = FMath::Min(
-			Style.bOverrideTrackThickness
-				? FMath::Max(0.0f, Style.TrackThickness)
-				: LunarSlider_Private::DefaultTrackThickness,
+			FMath::Max(0.0f, Slider->TrackThickness),
 			Slider->Orientation == Orient_Horizontal ? LocalSize.Y : LocalSize.X);
 
 		const float MinimumValue = Slider->GetMinimumValue();
 		const float MaximumValue = Slider->GetMaximumValue();
 		const float Range = MaximumValue - MinimumValue;
 		const float NormalizedValue = Range > 0.0f
-			? FMath::Clamp((Slider->PreviewValue - MinimumValue) / Range, 0.0f, 1.0f)
+			? FMath::Clamp((Slider->GetDisplayedValue() - MinimumValue) / Range, 0.0f, 1.0f)
 			: 0.0f;
-		const ESlateDrawEffect DrawEffects = bParentEnabled && Slider->GetIsEnabled()
-			? ESlateDrawEffect::None
-			: ESlateDrawEffect::DisabledEffect;
-
-		const FLinearColor TrackTint = LunarSlider_Private::ResolveTint(
-			*TrackBrush,
-			InWidgetStyle,
-			Style.bOverrideTrackTint,
-			Style.TrackTint,
-			Style.bOverrideTrackBrush ? FLinearColor::White : LunarSlider_Private::DefaultTrackTint);
-		const FLinearColor FillTint = LunarSlider_Private::ResolveTint(
-			*FillBrush,
-			InWidgetStyle,
-			Style.bOverrideFillTint,
-			Style.FillTint,
-			Style.bOverrideFillBrush ? FLinearColor::White : LunarSlider_Private::DefaultFillTint);
-		const FLinearColor ThumbTint = LunarSlider_Private::ResolveTint(
-			*ThumbBrush,
-			InWidgetStyle,
-			Style.bOverrideThumbTint,
-			Style.ThumbTint,
-			FLinearColor::White);
+		const ESlateDrawEffect DrawEffects = ESlateDrawEffect::None;
+		const FLinearColor TrackTint = LunarSlider_Private::ResolveTint(*TrackBrush, InWidgetStyle, Slider->TrackTint);
+		const FLinearColor FillTint = LunarSlider_Private::ResolveTint(*FillBrush, InWidgetStyle, Slider->FillTint);
+		const FLinearColor ThumbTint = LunarSlider_Private::ResolveTint(*ThumbBrush, InWidgetStyle, Slider->ThumbTint);
 
 		FVector2D TrackPosition;
 		FVector2D TrackSize;
@@ -410,7 +212,7 @@ public:
 	}
 
 private:
-	/** Weak owner supplying value, geometry semantics, and resolved style. */
+	/** Weak owner supplying value, geometry semantics, and native-part presentation. */
 	TWeakObjectPtr<ULunarSlider> Owner;
 };
 
@@ -420,6 +222,16 @@ ULunarSlider::ULunarSlider(const FObjectInitializer& ObjectInitializer)
 	bCanReceiveLunarSelection = true;
 	bCanInteractWithPointer = true;
 	bEnableInputPrompt = true;
+	TrackBrush = *FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
+	FillBrush = TrackBrush;
+	ThumbBrush = TrackBrush;
+
+	static ConstructorHelpers::FObjectFinder<UCurveFloat> DefaultInterpolationCurve(
+		TEXT("/Lunar/Curves/Float/CF_EaseOutExpo.CF_EaseOutExpo"));
+	if (DefaultInterpolationCurve.Succeeded())
+	{
+		ValueInterpolationCurve = DefaultInterpolationCurve.Object;
+	}
 
 	FLunarPromptActionRequest DecreasePrompt;
 	DecreasePrompt.ActionTag = LunarGameplayTags::UI_Action_Decrease.GetTag();
@@ -433,9 +245,145 @@ ULunarSlider::ULunarSlider(const FObjectInitializer& ObjectInitializer)
 	LastObservedCommitMode = CommitMode;
 }
 
-void ULunarSlider::SetValue(const float NewValue)
+void ULunarSlider::SetTrackBrush(const FSlateBrush& NewBrush)
 {
-	SetCommittedValueInternal(NewValue, false);
+	TrackBrush = NewBrush;
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::SetTrackTint(const FLinearColor NewTint)
+{
+	TrackTint = NewTint;
+	InvalidateSliderPresentation();
+}
+
+void ULunarSlider::SetTrackThickness(const float NewThickness)
+{
+	TrackThickness = FMath::Max(0.0f, NewThickness);
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::SetFillBrush(const FSlateBrush& NewBrush)
+{
+	FillBrush = NewBrush;
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::SetFillTint(const FLinearColor NewTint)
+{
+	FillTint = NewTint;
+	InvalidateSliderPresentation();
+}
+
+void ULunarSlider::SetThumbBrush(const FSlateBrush& NewBrush)
+{
+	ThumbBrush = NewBrush;
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::SetThumbTint(const FLinearColor NewTint)
+{
+	ThumbTint = NewTint;
+	InvalidateSliderPresentation();
+}
+
+void ULunarSlider::SetThumbSize(const FVector2D NewSize)
+{
+	ThumbSize = NewSize.ComponentMax(FVector2D::ZeroVector);
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::ConfigureTrackPresentation(const FSlateBrush& NewBrush, const FLinearColor NewTint, const float NewThickness)
+{
+	TrackBrush = NewBrush;
+	TrackTint = NewTint;
+	TrackThickness = FMath::Max(0.0f, NewThickness);
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::GetTrackPresentation(FSlateBrush& OutBrush, FLinearColor& OutTint, float& OutThickness) const
+{
+	OutBrush = TrackBrush;
+	OutTint = TrackTint;
+	OutThickness = TrackThickness;
+}
+
+void ULunarSlider::ConfigureFillPresentation(const FSlateBrush& NewBrush, const FLinearColor NewTint)
+{
+	FillBrush = NewBrush;
+	FillTint = NewTint;
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::GetFillPresentation(FSlateBrush& OutBrush, FLinearColor& OutTint) const
+{
+	OutBrush = FillBrush;
+	OutTint = FillTint;
+}
+
+void ULunarSlider::ConfigureThumbPresentation(const FSlateBrush& NewBrush, const FLinearColor NewTint, const FVector2D NewSize)
+{
+	ThumbBrush = NewBrush;
+	ThumbTint = NewTint;
+	ThumbSize = NewSize.ComponentMax(FVector2D::ZeroVector);
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::GetThumbPresentation(FSlateBrush& OutBrush, FLinearColor& OutTint, FVector2D& OutSize) const
+{
+	OutBrush = ThumbBrush;
+	OutTint = ThumbTint;
+	OutSize = ThumbSize;
+}
+
+void ULunarSlider::ConfigureSliderPresentation(
+	const FSlateBrush& NewTrackBrush,
+	const FLinearColor NewTrackTint,
+	const FSlateBrush& NewFillBrush,
+	const FLinearColor NewFillTint,
+	const FSlateBrush& NewThumbBrush,
+	const FLinearColor NewThumbTint,
+	const float NewTrackThickness,
+	const FVector2D NewThumbSize)
+{
+	TrackBrush = NewTrackBrush;
+	TrackTint = NewTrackTint;
+	FillBrush = NewFillBrush;
+	FillTint = NewFillTint;
+	ThumbBrush = NewThumbBrush;
+	ThumbTint = NewThumbTint;
+	TrackThickness = FMath::Max(0.0f, NewTrackThickness);
+	ThumbSize = NewThumbSize.ComponentMax(FVector2D::ZeroVector);
+	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::GetSliderPresentation(
+	FSlateBrush& OutTrackBrush,
+	FLinearColor& OutTrackTint,
+	FSlateBrush& OutFillBrush,
+	FLinearColor& OutFillTint,
+	FSlateBrush& OutThumbBrush,
+	FLinearColor& OutThumbTint,
+	float& OutTrackThickness,
+	FVector2D& OutThumbSize) const
+{
+	OutTrackBrush = TrackBrush;
+	OutTrackTint = TrackTint;
+	OutFillBrush = FillBrush;
+	OutFillTint = FillTint;
+	OutThumbBrush = ThumbBrush;
+	OutThumbTint = ThumbTint;
+	OutTrackThickness = TrackThickness;
+	OutThumbSize = ThumbSize;
+}
+void ULunarSlider::SetValue(
+	const float NewValue,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	SetCommittedValueInternal(
+		NewValue,
+		false,
+		NotificationPolicy == ELunarChangeNotificationPolicy::Notify);
 }
 
 float ULunarSlider::GetValue() const
@@ -443,8 +391,12 @@ float ULunarSlider::GetValue() const
 	return Value;
 }
 
-void ULunarSlider::SetValueRange(const float NewMinValue, const float NewMaxValue)
+void ULunarSlider::SetValueRange(
+	const float NewMinValue,
+	const float NewMaxValue,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
 {
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	const float SafeMin = FMath::IsFinite(NewMinValue) ? NewMinValue : 0.0f;
 	const float SafeMax = FMath::IsFinite(NewMaxValue) ? NewMaxValue : 1.0f;
 	MinValue = FMath::Min(SafeMin, SafeMax);
@@ -456,16 +408,17 @@ void ULunarSlider::SetValueRange(const float NewMinValue, const float NewMaxValu
 	PreviewValue = ClampValue(PreviewValue);
 	bHasPendingPreview = CommitMode == ELunarSliderCommitMode::OnAccept
 		&& PreviewValue != Value;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation(true);
 	RefreshLunarAccessibility();
 
-	if (PreviousValue != Value)
+	if (bNotify && PreviousValue != Value)
 	{
-		OnValueChanged.Broadcast(Value);
+		OnValueChanged.Broadcast(this, Value);
 	}
-	if (PreviousPreviewValue != PreviewValue)
+	if (bNotify && PreviousPreviewValue != PreviewValue)
 	{
-		OnPreviewValueChanged.Broadcast(PreviewValue);
+		OnPreviewValueChanged.Broadcast(this, PreviewValue);
 		NotifyAccessibleValue(PreviewValue);
 	}
 }
@@ -475,39 +428,51 @@ float ULunarSlider::GetPreviewValue() const
 	return PreviewValue;
 }
 
-void ULunarSlider::CommitPreviewValue()
+float ULunarSlider::GetDisplayedValue() const
 {
+	return bDisplayedValueInitialized ? DisplayedValue : PreviewValue;
+}
+
+void ULunarSlider::CommitPreviewValue(const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	const float PreviousValue = Value;
 	const float PreviousPreviewValue = PreviewValue;
 	const float CommittedValue = ClampValue(PreviewValue);
 	Value = CommittedValue;
 	PreviewValue = CommittedValue;
 	bHasPendingPreview = false;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
 
-	if (PreviousValue != CommittedValue)
+	if (bNotify && PreviousValue != CommittedValue)
 	{
-		OnValueChanged.Broadcast(CommittedValue);
+		OnValueChanged.Broadcast(this, CommittedValue);
 	}
-	if (PreviousPreviewValue != CommittedValue)
+	if (bNotify && PreviousPreviewValue != CommittedValue)
 	{
-		OnPreviewValueChanged.Broadcast(CommittedValue);
+		OnPreviewValueChanged.Broadcast(this, CommittedValue);
 		NotifyAccessibleValue(CommittedValue);
 	}
-	OnValueCommitted.Broadcast(CommittedValue);
+	if (bNotify)
+	{
+		OnValueCommitted.Broadcast(this, CommittedValue);
+	}
 }
 
-void ULunarSlider::CancelPreviewValue()
+void ULunarSlider::CancelPreviewValue(const ELunarChangeNotificationPolicy NotificationPolicy)
 {
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	const float PreviousPreviewValue = PreviewValue;
 	PreviewValue = Value;
 	bHasPendingPreview = false;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
-	if (PreviousPreviewValue != PreviewValue)
+	if (bNotify && PreviousPreviewValue != PreviewValue)
 	{
-		OnPreviewValueChanged.Broadcast(PreviewValue);
+		OnPreviewValueChanged.Broadcast(this, PreviewValue);
 		NotifyAccessibleValue(PreviewValue);
 	}
 }
@@ -540,7 +505,15 @@ void ULunarSlider::SynchronizeProperties()
 	LastObservedCommitMode = CommitMode;
 	UpdateAcceptPrompt();
 	Super::SynchronizeProperties();
+	RefreshDisplayedValueTarget(false);
 	InvalidateSliderPresentation(true);
+}
+
+void ULunarSlider::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdateContinuousStickInput(InDeltaTime);
+	UpdateDisplayedValueInterpolation(InDeltaTime);
 }
 
 void ULunarSlider::NativeDestruct()
@@ -552,32 +525,6 @@ void ULunarSlider::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void ULunarSlider::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
-{
-	Super::NativeTick(MyGeometry, InDeltaTime);
-	TickSliderStyleTransition(InDeltaTime);
-	if (LastObservedCommitMode == CommitMode)
-	{
-		return;
-	}
-
-	if (!bPointerInteractionActive)
-	{
-		if (CommitMode == ELunarSliderCommitMode::Immediate)
-		{
-			CancelPreviewValue();
-		}
-		else
-		{
-			PreviewValue = Value;
-			bHasPendingPreview = false;
-			InvalidateSliderPresentation();
-			RefreshLunarAccessibility();
-		}
-	}
-	LastObservedCommitMode = CommitMode;
-	UpdateAcceptPrompt();
-}
 
 FReply ULunarSlider::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
@@ -635,7 +582,7 @@ void ULunarSlider::NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLost
 
 FReply ULunarSlider::NativeOnTouchStarted(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
 {
-	if (!bCanInteractWithPointer
+	if (!bAllowTouchInput
 		|| !InGestureEvent.IsTouchEvent()
 		|| InGestureEvent.GetPointerIndex() != 0)
 	{
@@ -735,7 +682,11 @@ ELunarUIActionResult ULunarSlider::NativeHandleLunarAction(const FLunarUIActionC
 				? ELunarUIActionResult::Handled
 				: ELunarUIActionResult::Rejected;
 		}
-		if (ActionContext.InputEvent == IE_Pressed || ActionContext.InputEvent == IE_Repeat)
+		const bool bContinuousStickAction = StickInputMode == ELunarSliderStickInputMode::Continuous
+			&& ActionContext.InputDevice == ELunarInputDeviceType::Gamepad
+			&& ActionContext.AnalogMagnitude > 0.0f;
+		if ((ActionContext.InputEvent == IE_Pressed || ActionContext.InputEvent == IE_Repeat)
+			&& !bContinuousStickAction)
 		{
 			ApplyNavigationStep(ActionTag == LunarGameplayTags::UI_Action_Increase.GetTag());
 		}
@@ -825,6 +776,7 @@ void ULunarSlider::NativeOnLunarSelected()
 {
 	PreviewValue = Value;
 	bHasPendingPreview = false;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
 	Super::NativeOnLunarSelected();
@@ -857,29 +809,6 @@ FText ULunarSlider::NativeGetLunarAccessibleValueText() const
 		FText::AsNumber(PreviewValue));
 }
 
-bool ULunarSlider::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	FLunarSliderStylePatch ResolvedStyle;
-	const bool bResolved = LunarStyleResolver::ResolveSliderStyle(
-		StyleAsset,
-		GetLunarVisualState(),
-		StyleOverrides,
-		ResolvedStyle,
-		&OutError);
-	if (bResolved)
-	{
-		const_cast<ULunarSlider*>(this)->ResolvedSliderStyle = ResolvedStyle;
-		OutStyle = ResolvedStyle.Common;
-	}
-	return bResolved;
-}
-
-void ULunarSlider::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	Super::ApplyResolvedCommonStyle(ResolvedStyle);
-	ApplySliderStyleTarget(ResolvedSliderStyle);
-	InvalidateSliderPresentation(true);
-}
 
 float ULunarSlider::ClampValue(const float InValue) const
 {
@@ -910,6 +839,188 @@ float ULunarSlider::GetStepAmount() const
 		return SafeStepSize * FMath::Max(0.0f, GetMaximumValue() - GetMinimumValue());
 	}
 	return SafeStepSize;
+}
+
+float ULunarSlider::SnapPointerValue(const float InValue) const
+{
+	const float ClampedValue = ClampValue(InValue);
+	const float SafeStepSize = FMath::IsFinite(PointerStepSize)
+		? FMath::Max(0.0f, PointerStepSize)
+		: 0.0f;
+	if (SafeStepSize <= 0.0f)
+	{
+		return ClampedValue;
+	}
+
+	const float MinimumValue = GetMinimumValue();
+	const float MaximumValue = GetMaximumValue();
+	if (ClampedValue <= MinimumValue || ClampedValue >= MaximumValue)
+	{
+		return ClampedValue;
+	}
+
+	const float RelativeValue = ClampedValue - MinimumValue;
+	const float LowerValue = ClampValue(
+		MinimumValue + FMath::FloorToFloat(RelativeValue / SafeStepSize) * SafeStepSize);
+	const float UpperValue = FMath::Min(MaximumValue, LowerValue + SafeStepSize);
+	return ClampedValue - LowerValue < UpperValue - ClampedValue
+		? LowerValue
+		: UpperValue;
+}
+
+void ULunarSlider::UpdateContinuousStickInput(const float DeltaTime)
+{
+	if (StickInputMode != ELunarSliderStickInputMode::Continuous
+		|| bPointerInteractionActive
+		|| !IsLunarSelected()
+		|| !NativeCanActivateLunarWidget()
+		|| !FMath::IsFinite(DeltaTime)
+		|| DeltaTime <= 0.0f
+		|| !FMath::IsFinite(ContinuousStickRangePerSecond)
+		|| ContinuousStickRangePerSecond <= 0.0f)
+	{
+		return;
+	}
+
+	const ULocalPlayer* LocalPlayer = GetOwningLocalPlayer();
+	const ULunarNavigationSubsystem* NavigationSubsystem = LocalPlayer
+		? LocalPlayer->GetSubsystem<ULunarNavigationSubsystem>()
+		: nullptr;
+	ELunarNavigationDirection Direction = ELunarNavigationDirection::Up;
+	float Magnitude = 0.0f;
+	if (!NavigationSubsystem
+		|| !NavigationSubsystem->GetActiveAnalogNavigationForWidget(this, Direction, Magnitude))
+	{
+		return;
+	}
+
+	FGameplayTag ActionTag;
+	if (!NativeResolveDirectionalLunarControlAction(Direction, ActionTag))
+	{
+		return;
+	}
+	const bool bIncrease = ActionTag == LunarGameplayTags::UI_Action_Increase.GetTag();
+	const float CurrentValue = CommitMode == ELunarSliderCommitMode::OnAccept ? PreviewValue : Value;
+	const float Boundary = bIncrease ? GetMaximumValue() : GetMinimumValue();
+	if (CurrentValue == Boundary)
+	{
+		return;
+	}
+
+	const float Range = FMath::Max(0.0f, GetMaximumValue() - GetMinimumValue());
+	const float DeltaValue = Range
+		* ContinuousStickRangePerSecond
+		* FMath::Clamp(Magnitude, 0.0f, 1.0f)
+		* DeltaTime;
+	if (!FMath::IsFinite(DeltaValue) || DeltaValue <= 0.0f)
+	{
+		return;
+	}
+
+	const float UnclampedValue = CurrentValue + (bIncrease ? DeltaValue : -DeltaValue);
+	float NewValue = bIncrease && UnclampedValue >= GetMaximumValue()
+		? GetMaximumValue()
+		: (!bIncrease && UnclampedValue <= GetMinimumValue() ? GetMinimumValue() : ClampValue(UnclampedValue));
+	if (NewValue == CurrentValue)
+	{
+		NewValue = std::nextafter(CurrentValue, Boundary);
+		if (NewValue == CurrentValue)
+		{
+			return;
+		}
+	}
+
+	if (CommitMode == ELunarSliderCommitMode::OnAccept)
+	{
+		SetPreviewValueInternal(NewValue);
+	}
+	else
+	{
+		SetCommittedValueInternal(NewValue, true);
+	}
+}
+
+void ULunarSlider::UpdateDisplayedValueInterpolation(const float DeltaTime)
+{
+	RefreshDisplayedValueTarget(true);
+	if (!bDisplayedValueInterpolationActive
+		|| !FMath::IsFinite(DeltaTime)
+		|| DeltaTime <= 0.0f)
+	{
+		return;
+	}
+
+	DisplayedValueInterpolationElapsed += DeltaTime;
+	const float Progress = FMath::Clamp(
+		DisplayedValueInterpolationElapsed * ValueInterpolationSpeed,
+		0.0f,
+		1.0f);
+	float CurveAlpha = Progress;
+	if (IsValid(ValueInterpolationCurve))
+	{
+		const float EvaluatedAlpha = ValueInterpolationCurve->GetFloatValue(Progress);
+		if (FMath::IsFinite(EvaluatedAlpha))
+		{
+			CurveAlpha = EvaluatedAlpha;
+		}
+	}
+
+	const float NewDisplayedValue = Progress >= 1.0f
+		? DisplayedValueInterpolationTarget
+		: FMath::Lerp(
+			DisplayedValueInterpolationSource,
+			DisplayedValueInterpolationTarget,
+			CurveAlpha);
+	if (Progress >= 1.0f)
+	{
+		bDisplayedValueInterpolationActive = false;
+	}
+	SetDisplayedValueInternal(NewDisplayedValue, true);
+}
+
+void ULunarSlider::RefreshDisplayedValueTarget(const bool bBroadcast)
+{
+	const float ClampedTarget = ClampValue(PreviewValue);
+	const bool bMustSnap = !bDisplayedValueInitialized
+		|| IsDesignTime()
+		|| !bInterpolateValueChanges
+		|| !FMath::IsFinite(ValueInterpolationSpeed)
+		|| ValueInterpolationSpeed <= 0.0f;
+	if (bMustSnap)
+	{
+		DisplayedValueInterpolationSource = ClampedTarget;
+		DisplayedValueInterpolationTarget = ClampedTarget;
+		DisplayedValueInterpolationElapsed = 0.0f;
+		bDisplayedValueInterpolationActive = false;
+		SetDisplayedValueInternal(ClampedTarget, bBroadcast);
+		return;
+	}
+
+	if (!bDisplayedValueInterpolationActive
+		|| DisplayedValueInterpolationTarget != ClampedTarget)
+	{
+		DisplayedValueInterpolationSource = GetDisplayedValue();
+		DisplayedValueInterpolationTarget = ClampedTarget;
+		DisplayedValueInterpolationElapsed = 0.0f;
+		bDisplayedValueInterpolationActive = DisplayedValueInterpolationSource != ClampedTarget;
+	}
+}
+
+void ULunarSlider::SetDisplayedValueInternal(const float NewDisplayedValue, const bool bBroadcast)
+{
+	const float ClampedValue = ClampValue(NewDisplayedValue);
+	if (bDisplayedValueInitialized && DisplayedValue == ClampedValue)
+	{
+		return;
+	}
+
+	DisplayedValue = ClampedValue;
+	bDisplayedValueInitialized = true;
+	InvalidateSliderPresentation();
+	if (bBroadcast)
+	{
+		OnDisplayedValueChanged.Broadcast(this, DisplayedValue);
+	}
 }
 
 bool ULunarSlider::ApplyNavigationStep(const bool bIncrease)
@@ -966,13 +1077,17 @@ void ULunarSlider::SetPreviewValueInternal(const float NewPreviewValue)
 	PreviewValue = ClampedValue;
 	bHasPendingPreview = CommitMode == ELunarSliderCommitMode::OnAccept
 		&& PreviewValue != Value;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
-	OnPreviewValueChanged.Broadcast(PreviewValue);
+	OnPreviewValueChanged.Broadcast(this, PreviewValue);
 	NotifyAccessibleValue(PreviewValue);
 }
 
-void ULunarSlider::SetCommittedValueInternal(const float NewValue, const bool bBroadcastCommitted)
+void ULunarSlider::SetCommittedValueInternal(
+	const float NewValue,
+	const bool bBroadcastCommitted,
+	const bool bNotifyChange)
 {
 	const float ClampedValue = ClampValue(NewValue);
 	const float PreviousValue = Value;
@@ -980,21 +1095,22 @@ void ULunarSlider::SetCommittedValueInternal(const float NewValue, const bool bB
 	Value = ClampedValue;
 	PreviewValue = ClampedValue;
 	bHasPendingPreview = false;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
 
-	if (PreviousValue != ClampedValue)
+	if (bNotifyChange && PreviousValue != ClampedValue)
 	{
-		OnValueChanged.Broadcast(ClampedValue);
+		OnValueChanged.Broadcast(this, ClampedValue);
 	}
-	if (PreviousPreviewValue != ClampedValue)
+	if (bNotifyChange && PreviousPreviewValue != ClampedValue)
 	{
-		OnPreviewValueChanged.Broadcast(ClampedValue);
+		OnPreviewValueChanged.Broadcast(this, ClampedValue);
 		NotifyAccessibleValue(ClampedValue);
 	}
-	if (bBroadcastCommitted)
+	if (bNotifyChange && bBroadcastCommitted)
 	{
-		OnValueCommitted.Broadcast(ClampedValue);
+		OnValueCommitted.Broadcast(this, ClampedValue);
 	}
 }
 
@@ -1007,6 +1123,13 @@ void ULunarSlider::NormalizeConfiguredRange()
 		Swap(MinValue, MaxValue);
 	}
 	StepSize = FMath::IsFinite(StepSize) ? FMath::Max(0.0f, StepSize) : 0.0f;
+	ContinuousStickRangePerSecond = FMath::IsFinite(ContinuousStickRangePerSecond)
+		? FMath::Max(0.0f, ContinuousStickRangePerSecond)
+		: 0.0f;
+	PointerStepSize = FMath::IsFinite(PointerStepSize) ? FMath::Max(0.0f, PointerStepSize) : 0.0f;
+	ValueInterpolationSpeed = FMath::IsFinite(ValueInterpolationSpeed)
+		? FMath::Max(0.0f, ValueInterpolationSpeed)
+		: 0.0f;
 }
 
 void ULunarSlider::UpdateAcceptPrompt()
@@ -1082,13 +1205,10 @@ void ULunarSlider::UpdatePointerPreview(
 		return;
 	}
 
-	const FLunarSliderStylePatch& Style = bHasDisplayedSliderStyle
-		? DisplayedSliderStyle
-		: ResolvedSliderStyle;
-	const FVector2D ThumbSize = LunarSlider_Private::ResolveThumbSize(Style).ComponentMin(LocalSize);
+	const FVector2D EffectiveThumbSize = ThumbSize.ComponentMax(FVector2D::ZeroVector).ComponentMin(LocalSize);
 	const FVector2D LocalPosition = InteractionGeometry.AbsoluteToLocal(ScreenSpacePosition);
 	const float AxisExtent = Orientation == Orient_Horizontal ? LocalSize.X : LocalSize.Y;
-	const float ThumbExtent = Orientation == Orient_Horizontal ? ThumbSize.X : ThumbSize.Y;
+	const float ThumbExtent = Orientation == Orient_Horizontal ? EffectiveThumbSize.X : EffectiveThumbSize.Y;
 	const float TrackStart = ThumbExtent * 0.5f;
 	const float TrackEnd = FMath::Max(TrackStart, AxisExtent - ThumbExtent * 0.5f);
 	const float TrackLength = TrackEnd - TrackStart;
@@ -1103,7 +1223,8 @@ void ULunarSlider::UpdatePointerPreview(
 	{
 		Fraction = 1.0f - Fraction;
 	}
-	SetPreviewValueInternal(FMath::Lerp(GetMinimumValue(), GetMaximumValue(), Fraction));
+	SetPreviewValueInternal(SnapPointerValue(
+		FMath::Lerp(GetMinimumValue(), GetMaximumValue(), Fraction)));
 }
 
 void ULunarSlider::CommitPointerInteraction()
@@ -1130,141 +1251,18 @@ void ULunarSlider::CancelPointerInteraction()
 	bHasPendingPreview = CommitMode == ELunarSliderCommitMode::OnAccept
 		&& bPointerStartHadPendingPreview
 		&& PreviewValue != Value;
+	RefreshDisplayedValueTarget(true);
 	InvalidateSliderPresentation();
 	RefreshLunarAccessibility();
 
 	if (PreviousValue != Value)
 	{
-		OnValueChanged.Broadcast(Value);
+		OnValueChanged.Broadcast(this, Value);
 	}
 	if (PreviousPreviewValue != PreviewValue)
 	{
-		OnPreviewValueChanged.Broadcast(PreviewValue);
+		OnPreviewValueChanged.Broadcast(this, PreviewValue);
 		NotifyAccessibleValue(PreviewValue);
-	}
-}
-
-void ULunarSlider::ApplySliderStyleTarget(const FLunarSliderStylePatch& NewTarget)
-{
-	FLunarSliderStylePatch CompleteTarget = NewTarget;
-	CompleteTarget.Common = MaterializeCommonStyleSnapshot(NewTarget.Common);
-	const FLunarSliderStylePatch MaterializedTarget = LunarSlider_Private::MaterializeStyle(CompleteTarget);
-	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
-	if (bReduceMotion)
-	{
-		bSliderStyleTransitionActive = false;
-		bSliderStyleTransitionReversing = false;
-		TransitionSourceSliderStyle = MaterializedTarget;
-		TransitionTargetSliderStyle = MaterializedTarget;
-		LogicalTargetSliderStyle = MaterializedTarget;
-		ApplyDisplayedSliderStyle(MaterializedTarget);
-		return;
-	}
-
-	if (bHasDisplayedSliderStyle
-		&& LunarSlider_Private::AreStylesEquivalent(LogicalTargetSliderStyle, MaterializedTarget))
-	{
-		return;
-	}
-
-	if (bSliderStyleTransitionActive)
-	{
-		const bool bReturnsToSource = !bSliderStyleTransitionReversing
-			&& LunarSlider_Private::AreStylesEquivalent(TransitionSourceSliderStyle, MaterializedTarget);
-		const bool bReturnsToForwardTarget = bSliderStyleTransitionReversing
-			&& LunarSlider_Private::AreStylesEquivalent(TransitionTargetSliderStyle, MaterializedTarget);
-		if (bReturnsToSource || bReturnsToForwardTarget)
-		{
-			LogicalTargetSliderStyle = MaterializedTarget;
-			bSliderStyleTransitionReversing = bReturnsToSource;
-			FLunarSliderStylePatch Snapshot = DisplayedSliderStyle;
-			LunarSlider_Private::ApplyDiscreteFields(
-				Snapshot,
-				bSliderStyleTransitionReversing ? TransitionSourceSliderStyle : TransitionTargetSliderStyle);
-			ApplyDisplayedSliderStyle(Snapshot);
-			return;
-		}
-	}
-
-	const bool bCanTransition = bHasDisplayedSliderStyle
-		&& MaterializedTarget.Common.Transition.bEnabled
-		&& MaterializedTarget.Common.Transition.Duration > 0.0f;
-	if (!bCanTransition)
-	{
-		bSliderStyleTransitionActive = false;
-		bSliderStyleTransitionReversing = false;
-		TransitionSourceSliderStyle = MaterializedTarget;
-		TransitionTargetSliderStyle = MaterializedTarget;
-		LogicalTargetSliderStyle = MaterializedTarget;
-		ApplyDisplayedSliderStyle(MaterializedTarget);
-		return;
-	}
-
-	TransitionSourceSliderStyle = DisplayedSliderStyle;
-	TransitionTargetSliderStyle = MaterializedTarget;
-	LogicalTargetSliderStyle = MaterializedTarget;
-	SliderStyleTransitionElapsed = 0.0f;
-	SliderStyleTransitionDuration = MaterializedTarget.Common.Transition.Duration;
-	bSliderStyleTransitionActive = true;
-	bSliderStyleTransitionReversing = false;
-	ApplyDisplayedSliderStyle(LunarSlider_Private::InterpolateStyle(
-		TransitionSourceSliderStyle,
-		TransitionTargetSliderStyle,
-		0.0f));
-}
-
-void ULunarSlider::ApplyDisplayedSliderStyle(const FLunarSliderStylePatch& NewDisplayedStyle)
-{
-	DisplayedSliderStyle = NewDisplayedStyle;
-	bHasDisplayedSliderStyle = true;
-	InvalidateSliderPresentation(true);
-}
-
-void ULunarSlider::TickSliderStyleTransition(const float DeltaTime)
-{
-	if (!bSliderStyleTransitionActive || SliderStyleTransitionDuration <= 0.0f)
-	{
-		return;
-	}
-	if (const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-		Settings && Settings->Navigation.Accessibility.bReduceMotion)
-	{
-		bSliderStyleTransitionActive = false;
-		bSliderStyleTransitionReversing = false;
-		ApplyDisplayedSliderStyle(LogicalTargetSliderStyle);
-		return;
-	}
-
-	const float Step = FMath::Max(0.0f, DeltaTime);
-	SliderStyleTransitionElapsed += bSliderStyleTransitionReversing ? -Step : Step;
-	SliderStyleTransitionElapsed = FMath::Clamp(
-		SliderStyleTransitionElapsed,
-		0.0f,
-		SliderStyleTransitionDuration);
-	const float Alpha = SliderStyleTransitionElapsed / SliderStyleTransitionDuration;
-	const float EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-		0.0,
-		1.0,
-		Alpha,
-		TransitionTargetSliderStyle.Common.Transition.Easing));
-	FLunarSliderStylePatch Snapshot = LunarSlider_Private::InterpolateStyle(
-		TransitionSourceSliderStyle,
-		TransitionTargetSliderStyle,
-		EasedAlpha);
-	if (bSliderStyleTransitionReversing)
-	{
-		LunarSlider_Private::ApplyDiscreteFields(Snapshot, TransitionSourceSliderStyle);
-	}
-	ApplyDisplayedSliderStyle(Snapshot);
-
-	const bool bFinished = bSliderStyleTransitionReversing ? Alpha <= 0.0f : Alpha >= 1.0f;
-	if (bFinished)
-	{
-		ApplyDisplayedSliderStyle(
-			bSliderStyleTransitionReversing ? TransitionSourceSliderStyle : TransitionTargetSliderStyle);
-		bSliderStyleTransitionActive = false;
-		bSliderStyleTransitionReversing = false;
 	}
 }
 

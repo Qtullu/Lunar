@@ -20,6 +20,7 @@ UENUM(BlueprintType)
 enum class ELunarFeedbackOverrideMode : uint8
 {
 	UseGlobal UMETA(DisplayName = "Use Global"), ///< Use the corresponding global Lunar setting.
+	UseDataAsset UMETA(DisplayName = "Use Data Asset"), ///< Use the corresponding entry from the widget's assigned feedback Data Asset.
 	Disabled UMETA(DisplayName = "Disabled"), ///< Suppress feedback for this event.
 	Custom UMETA(DisplayName = "Custom") ///< Use the per-widget custom feedback specification.
 };
@@ -58,7 +59,46 @@ struct LUNAR_API FLunarUIHapticSpec
 	TObjectPtr<UForceFeedbackEffect> Effect = nullptr;
 };
 
-/** @brief Selects the global, disabled, or custom sound for one feedback event. @ingroup LunarNavigationTypes */
+/** @brief Complete reusable sound-feedback set stored by a Lunar sound feedback Data Asset. @ingroup LunarNavigationTypes */
+USTRUCT(BlueprintType)
+struct LUNAR_API FLunarUISoundFeedbackSet
+{
+	GENERATED_BODY()
+
+	/** Sound played when pointer hover begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec PointerHovered;
+	/** Sound played when a pointer press begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec PointerPressed;
+	/** Sound played when pointer click succeeds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec PointerClicked;
+	/** Sound played when pointer click is rejected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec PointerRejected;
+	/** Sound played when Lunar Selection enters a control. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec NavigationSelected;
+	/** Sound played when navigation press begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec NavigationPressed;
+	/** Sound played when navigation click succeeds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec NavigationClicked;
+	/** Sound played when navigation click is rejected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundSpec NavigationRejected;
+};
+
+/** @brief Complete reusable haptic-feedback set stored by a Lunar haptic feedback Data Asset. @ingroup LunarNavigationTypes */
+USTRUCT(BlueprintType)
+struct LUNAR_API FLunarUIHapticFeedbackSet
+{
+	GENERATED_BODY()
+
+	/** Haptic effect played when Lunar Selection enters a control. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUIHapticSpec NavigationSelected;
+	/** Haptic effect played when navigation press begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUIHapticSpec NavigationPressed;
+	/** Haptic effect played when navigation click succeeds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUIHapticSpec NavigationClicked;
+	/** Haptic effect played when navigation click is rejected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback") FLunarUIHapticSpec NavigationRejected;
+};
+/** @brief Selects the global, Data Asset, disabled, or custom sound for one feedback event. @ingroup LunarNavigationTypes */
 USTRUCT(BlueprintType)
 struct LUNAR_API FLunarUISoundOverride
 {
@@ -73,7 +113,7 @@ struct LUNAR_API FLunarUISoundOverride
 	FLunarUISoundSpec CustomSound;
 };
 
-/** @brief Selects the global, disabled, or custom haptic effect for one feedback event. @ingroup LunarNavigationTypes */
+/** @brief Selects the global, Data Asset, disabled, or custom haptic effect for one feedback event. @ingroup LunarNavigationTypes */
 USTRUCT(BlueprintType)
 struct LUNAR_API FLunarUIHapticOverride
 {
@@ -102,9 +142,9 @@ struct LUNAR_API FLunarUISoundOverrides
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
 	FLunarUISoundOverride PointerPressed;
 
-	/** @brief Sound played when a pointer interaction activates the control. */
+	/** @brief Sound played when a pointer click succeeds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
-	FLunarUISoundOverride PointerActivated;
+	FLunarUISoundOverride PointerClicked;
 
 	/** @brief Sound played when a pointer interaction is rejected. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
@@ -118,11 +158,11 @@ struct LUNAR_API FLunarUISoundOverrides
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
 	FLunarUISoundOverride NavigationPressed;
 
-	/** @brief Sound played when navigation activation succeeds. */
+	/** @brief Sound played when navigation click succeeds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
-	FLunarUISoundOverride NavigationActivated;
+	FLunarUISoundOverride NavigationClicked;
 
-	/** @brief Sound played when navigation activation is rejected. */
+	/** @brief Sound played when navigation click is rejected. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
 	FLunarUISoundOverride NavigationRejected;
 };
@@ -141,11 +181,11 @@ struct LUNAR_API FLunarUIHapticOverrides
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
 	FLunarUIHapticOverride NavigationPressed;
 
-	/** @brief Haptic effect played when navigation activation succeeds. */
+	/** @brief Haptic effect played when navigation click succeeds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
-	FLunarUIHapticOverride NavigationActivated;
+	FLunarUIHapticOverride NavigationClicked;
 
-	/** @brief Haptic effect played when navigation activation is rejected. */
+	/** @brief Haptic effect played when navigation click is rejected. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Feedback")
 	FLunarUIHapticOverride NavigationRejected;
 };

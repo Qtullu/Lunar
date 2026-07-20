@@ -13,53 +13,25 @@
 #include "UI/Navigation/Types/LunarInputPromptTypes.h"
 #include "UI/Navigation/Types/LunarNavigationTypes.h"
 #include "UI/Navigation/Types/LunarUIFeedbackTypes.h"
-#include "UI/Navigation/Types/LunarUIStyleTypes.h"
 #include "LunarNavigableWidget.generated.h"
 
 class ULunarInputIconSet;
 class ULunarNavigationScope;
 class ULunarNavigationSubsystem;
-class UTextBlock;
-class ULunarWidgetStyleAsset;
-class SBorder;
 class SBox;
-class SImage;
-class SLunarContentStyleLayer;
 class ULunarInputPromptWidget;
-
-/**
- * @brief Native presentation values restored when a common text-style field stops overriding a TextBlock.
- * @ingroup LunarNavigationCore
- */
-struct FLunarTextBlockStyleBaseline
-{
-	/** Text widget whose authored presentation was captured. */
-	TWeakObjectPtr<UTextBlock> TextBlock;
-	/** Authored text color used when no resolved override is present. */
-	FSlateColor ColorAndOpacity;
-	/** Authored font used when no resolved override is present. */
-	FSlateFontInfo Font;
-	/** Authored shadow color and opacity. */
-	FLinearColor ShadowColorAndOpacity = FLinearColor::Transparent;
-	/** Authored shadow offset. */
-	FVector2D ShadowOffset = FVector2D::ZeroVector;
-	/** Materialized text-color source captured at transition start. */
-	FLinearColor CapturedTransitionSourceColor = FLinearColor::White;
-	/** Materialized shadow-color source captured at transition start. */
-	FLinearColor CapturedTransitionSourceShadowColor = FLinearColor::Transparent;
-	/** Materialized shadow-offset source captured at transition start. */
-	FVector2D CapturedTransitionSourceShadowOffset = FVector2D::ZeroVector;
-};
+class ULunarUISoundFeedbackAsset;
+class ULunarUIHapticFeedbackAsset;
 
 /**
  * @brief Shared selection, presentation, feedback, prompt, pointer, and accessibility contract for Lunar controls.
  * @ingroup LunarNavigationCore
  *
  * Concrete Lunar controls inherit this class to join a scope graph, receive
- * semantic actions, resolve common style patches, and expose consistent input
+ * semantic actions, publish visual state, and expose consistent input
  * feedback and accessibility behavior.
  */
-UCLASS(Abstract, Blueprintable)
+UCLASS(Abstract, Blueprintable, HideFunctions = (GetIsEnabled, SetIsEnabled))
 class LUNAR_API ULunarNavigableWidget : public UUserWidget
 {
 	GENERATED_BODY()
@@ -67,6 +39,11 @@ class LUNAR_API ULunarNavigableWidget : public UUserWidget
 public:
 	/** @brief Creates a navigable control and enables native focus required for Slate user focus. @param ObjectInitializer Unreal object initializer. */
 	ULunarNavigableWidget(const FObjectInitializer& ObjectInitializer);
+
+#if WITH_EDITOR
+	/** @return Shared UMG Palette category for placeable Lunar navigation controls. */
+	virtual const FText GetPaletteCategory() override;
+#endif
 
 	/** @brief Requests authoritative selection from the owning subsystem. @return True when this widget becomes selected. */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation")
@@ -80,6 +57,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation")
 	bool CanReceiveLunarSelection() const;
 
+	/** @return True when this widget accepts mouse hover, selection, and activation. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Input")
+	bool IsMouseInputAllowed() const { return bCanInteractWithPointer; }
+
+	/** @return True when this widget accepts touch selection and activation. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Input")
+	bool IsTouchInputAllowed() const { return bAllowTouchInput; }
+
+	/** @return True when this widget participates in keyboard navigation and actions. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Input")
+	bool IsKeyboardInputAllowed() const { return bAllowKeyboardInput; }
+
+	/** @return True when this widget participates in gamepad navigation and actions. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Input")
+	bool IsGamepadInputAllowed() const { return bAllowGamepadInput; }
+
+	/** @param InputDevice Navigation device to test; KeyboardMouse means the keyboard channel here. @return True when that navigation channel is allowed. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Input")
+	bool IsNavigationInputAllowed(ELunarInputDeviceType InputDevice) const;
+
+	/** @return True when Lunar permits this control and its descendants to activate. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation")
+	bool IsLunarEnabled() const { return bLunarEnabled; }
+
+	/** @brief Changes logical Lunar availability without invoking Slate's native disabled tint or pointer suppression. @param bEnabled New logical availability. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation")
+	void SetLunarEnabled(bool bEnabled);
+
+	/** @brief Compatibility bridge that routes native Set Is Enabled calls to SetLunarEnabled while Slate remains presentation-enabled. @param bInIsEnabled New logical Lunar availability. */
+	virtual void SetIsEnabled(bool bInIsEnabled) override;
+
 	/** @brief Activates this control or emits Rejected feedback when it is unavailable. */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation")
 	void ActivateLunarWidget();
@@ -92,12 +100,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation")
 	ELunarUIActionResult HandleLunarAction(const FLunarUIActionContext& ActionContext);
 
-	/** @brief Replaces the control style asset and refreshes diagnostics and presentation. @param NewStyleAsset Compatible style asset, or nullptr for defaults. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Style")
-	void SetStyleAsset(ULunarWidgetStyleAsset* NewStyleAsset);
-
-	/** @brief Resolves and applies the visual state implied by current interaction and value state. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Style")
+	/** @brief Resolves and publishes the visual state implied by current interaction, value, and Designer preview state. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Presentation")
 	void RefreshVisualState();
 
 	/** @brief Replaces all prompt action requests. @param NewPromptActions New ordered request set. */
@@ -154,6 +158,8 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarNavigableWidgetEventSignature OnLunarUnselected;
 	/** Broadcast when a pointer or semantic press begins. */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarNavigableWidgetEventSignature OnLunarPressed;
+	/** Broadcast immediately and every tick of a valid hold, including local-delay state. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarHoldProgressSignature OnLunarHoldProgress;
 	/** Broadcast when the active press ends or is cancelled. */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarNavigableWidgetEventSignature OnLunarReleased;
 	/** Broadcast after this control accepts activation. */
@@ -161,14 +167,24 @@ public:
 	/** Broadcast after an activation or action is rejected. */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarNavigableWidgetEventSignature OnLunarRejected;
 	/** Broadcast when the owning player's active presentation device changes. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarInputDeviceChangedSignature OnLunarInputDeviceChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarNavigableInputDeviceChangedSignature OnLunarInputDeviceChanged;
 	/** Broadcast after the resolved Lunar visual state changes. */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Events") FLunarVisualStateChangedSignature OnLunarVisualStateChanged;
 
 	/** Whether this control may participate in the navigation graph. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation") bool bCanReceiveLunarSelection = false;
-	/** Whether mouse and touch interactions are accepted. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation") bool bCanInteractWithPointer = true;
+	/** Whether mouse hover, selection, and activation are accepted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Input", meta = (DisplayName = "Allow Mouse Input")) bool bCanInteractWithPointer = true;
+	/** Whether touch selection and activation are accepted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Input", meta = (DisplayName = "Allow Touch Input")) bool bAllowTouchInput = true;
+	/** Whether keyboard navigation and semantic actions are accepted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Input", meta = (DisplayName = "Allow Keyboard Input")) bool bAllowKeyboardInput = true;
+	/** Whether gamepad navigation and semantic actions are accepted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Input", meta = (DisplayName = "Allow Gamepad Input")) bool bAllowGamepadInput = true;
+	/** Logical availability owned by Lunar; disabled controls retain exact authored styles and optional inspection input. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation", meta = (DisplayName = "Lunar Enabled")) bool bLunarEnabled = true;
+	/** Per-widget delay before HoldSeconds begins accumulating; Hold Progress itself starts immediately after Pressed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Hold", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s")) float HoldStartDelay = 0.0f;
 	/** Whether a disabled widget remains eligible for navigation selection. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation") bool bCanReceiveSelectionWhenDisabled = false;
 	/** Stable identifier used by explicit links, initial selection, and restoration. */
@@ -187,11 +203,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation") FLunarNavigationLink RightLink;
 	/** Optional scope assignment that supersedes hierarchy discovery. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation", meta = (AllowPrivateAccess = "true")) TObjectPtr<ULunarNavigationScope> NavigationScopeOverride;
-
-	/** Concrete controls accept only their compatible strongly typed style asset. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Style") TObjectPtr<ULunarWidgetStyleAsset> StyleAsset;
-	/** Per-instance common style fields layered above resolved asset defaults. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Style") FLunarCommonStylePatch StyleOverrides;
+#if WITH_EDITORONLY_DATA
+	/** Controls whether the UMG Designer publishes a custom visual state instead of live defaults. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Designer Preview")
+	ELunarVisualStatePreviewMode PreviewMode = ELunarVisualStatePreviewMode::None;
+	/** Custom state published only while PreviewMode is Custom and the widget is at design time. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Designer Preview", meta = (EditCondition = "PreviewMode == ELunarVisualStatePreviewMode::Custom", EditConditionHides))
+	FLunarUIVisualState PreviewVisualState;
+#endif
 
 	/** Whether this control creates and drives an input-prompt receiver. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Prompts") bool bEnableInputPrompt = false;
@@ -204,6 +223,10 @@ public:
 	/** Optional icon set that supersedes the device default for this prompt. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Prompts", meta = (EditCondition = "bEnableInputPrompt")) TObjectPtr<ULunarInputIconSet> PromptIconSetOverride;
 
+	/** Optional reusable sound set selected by per-event Use Data Asset modes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Feedback") TObjectPtr<ULunarUISoundFeedbackAsset> SoundFeedbackAsset;
+	/** Optional reusable haptic set selected by per-event Use Data Asset modes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Feedback") TObjectPtr<ULunarUIHapticFeedbackAsset> HapticFeedbackAsset;
 	/** Per-event sound overrides layered over project feedback defaults. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Feedback") FLunarUISoundOverrides SoundOverrides;
 	/** Per-event haptic overrides layered over project feedback defaults. */
@@ -211,17 +234,17 @@ public:
 
 	/** Whether selecting this widget requests ancestor Lunar scroll boxes to reveal it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Scroll") bool bScrollIntoViewOnSelection = true;
-	/** Accessible display name announced instead of the widget label when set. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility") FText AccessibleName;
-	/** Additional accessible description exposed to assistive technology. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility", meta = (MultiLine = "true")) FText AccessibleDescription;
-	/** Reason announced when a disabled control rejects interaction. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility", meta = (MultiLine = "true")) FText DisabledReason;
+	/** Non-localized accessible display name announced instead of the widget label when set. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility") FString AccessibleName;
+	/** Additional non-localized accessible description exposed to assistive technology. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility", meta = (MultiLine = "true")) FString AccessibleDescription;
+	/** Non-localized reason announced when a disabled control rejects interaction. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Accessibility", meta = (MultiLine = "true")) FString DisabledReason;
 
 protected:
-	/** @return Rebuilt Slate hierarchy containing common and control-specific presentation layers. */
+	/** @return Rebuilt Slate hierarchy containing native specialized presentation, owner content, and the prompt host. */
 	virtual TSharedRef<SWidget> RebuildWidget() override;
-	/** @return Optional control-specific Slate layer placed above common background and below arbitrary owner content. */
+	/** @return Optional control-specific native Slate presentation placed below arbitrary owner content. */
 	virtual TSharedPtr<SWidget> RebuildLunarSpecializedPresentation();
 	/** @param bReleaseChildren Whether child Slate resources must also be released. */
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
@@ -239,6 +262,10 @@ protected:
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
 	/** @param InGeometry Current geometry. @param InMouseEvent Button-down event. @return Slate handling reply. */
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	/** @param InGeometry Current geometry. @param InMouseEvent Preview button-down event. @return Handled when logical disabled state must intercept descendant input. */
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	/** @param InGeometry Current geometry. @param InMouseEvent Double-click event. @return Slate handling reply that begins the next independent pointer activation. */
+	virtual FReply NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	/** @param InGeometry Current geometry. @param InMouseEvent Button-up event. @return Slate handling reply. */
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	/** @param CaptureLostEvent Capture-loss context supplied by Slate. */
@@ -268,6 +295,8 @@ protected:
 	virtual void NativeOnLunarUnselected();
 	/** @brief Native hook invoked when an interaction press begins. */
 	virtual void NativeOnLunarPressed();
+	/** @param HoldSeconds Active hold time after the local delay. @param PressedSeconds Total time since Pressed, including the delay. @param DelayLeft Remaining local-delay time clamped to zero. @param bDelayElapsed Whether the local delay has elapsed. */
+	virtual void NativeOnLunarHoldProgress(float HoldSeconds, float PressedSeconds, float DelayLeft, bool bDelayElapsed);
 	/** @brief Native hook invoked when an interaction press ends. */
 	virtual void NativeOnLunarReleased();
 	/** @brief Native hook invoked after accepted activation. */
@@ -276,17 +305,15 @@ protected:
 	virtual void NativeOnLunarRejected();
 	/** @param NewInputDevice Newly active presentation device. */
 	virtual void NativeOnLunarInputDeviceChanged(ELunarInputDeviceType NewInputDevice);
-	/** @param VisualState Newly resolved interaction, device, and value state. */
-	virtual void NativeOnLunarVisualStateChanged(const FLunarUIVisualState& VisualState);
+	/** @param PreviousState Previously published state. @param NewState Newly resolved state. @param bIsDesignerPreview True only for an editor Designer preview publication. */
+	virtual void NativeOnLunarVisualStateChanged(
+		const FLunarUIVisualState& PreviousState,
+		const FLunarUIVisualState& NewState,
+		bool bIsDesignerPreview);
 	/** @brief Native hook invoked after prompt configuration or presentation becomes stale. */
 	virtual void NativeOnInputPromptInvalidated();
 	/** @return Accessible value text announced for the concrete control. */
 	virtual FText NativeGetLunarAccessibleValueText() const;
-	/** @param OutStyle Receives the resolved common patch. @param OutError Receives an actionable resolution error. @return True when style resolution succeeds. */
-	virtual bool ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const;
-	/** @param ResolvedStyle Fully resolved common style fields to apply. */
-	virtual void ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle);
-
 	/** @param NativeFocusWidget Native descendant that began an editing session. */
 	virtual void NativeOnNativeFocusDelegationStarted(UWidget* NativeFocusWidget);
 	/** @param NativeFocusWidget Native descendant whose editing session was committed. */
@@ -298,11 +325,7 @@ protected:
 
 	/** @return Current resolved visual-state descriptor. */
 	const FLunarUIVisualState& GetLunarVisualState() const { return CurrentVisualState; }
-	/** @return Common style currently displayed, including transition interpolation. */
-	const FLunarCommonStylePatch& GetResolvedCommonStyle() const { return DisplayedCommonStyle; }
-	/** @param ResolvedStyle Sparse resolved patch. @return Complete snapshot expanded against the captured widget baseline. */
-	FLunarCommonStylePatch MaterializeCommonStyleSnapshot(const FLunarCommonStylePatch& ResolvedStyle) const;
-	/** @param NewValueStateTag Concrete control value-state tag used by style resolution. */
+	/** @param NewValueStateTag Concrete control value-state tag published to Blueprint presentation. */
 	void SetLunarValueState(FGameplayTag NewValueStateTag);
 	/** @brief Cancels the current pointer press and releases capture when owned. */
 	void CancelPointerPress();
@@ -325,6 +348,8 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Unselected")) void BP_OnLunarUnselected();
 	/** @brief Blueprint notification for interaction press. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Pressed")) void BP_OnLunarPressed();
+	/** @param HoldSeconds Active hold time after the local delay. @param PressedSeconds Total time since Pressed, including the delay. @param DelayLeft Remaining local-delay time clamped to zero. @param bDelayElapsed Whether the local delay has elapsed. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Hold Progress")) void BP_OnLunarHoldProgress(float HoldSeconds, float PressedSeconds, float DelayLeft, bool bDelayElapsed);
 	/** @brief Blueprint notification for interaction release. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Released")) void BP_OnLunarReleased();
 	/** @brief Blueprint notification for accepted activation. */
@@ -333,8 +358,9 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Rejected")) void BP_OnLunarRejected();
 	/** @param NewInputDevice Newly active presentation device. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Input Device Changed")) void BP_OnLunarInputDeviceChanged(ELunarInputDeviceType NewInputDevice);
-	/** @param VisualState Newly resolved visual state. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Visual State Changed")) void BP_OnLunarVisualStateChanged(const FLunarUIVisualState& VisualState);
+	/** @param PreviousState Previously published state. @param NewState Newly resolved state. @param bIsDesignerPreview True only while previewing in the UMG Designer. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Navigation|Events", meta = (DisplayName = "On Lunar Visual State Changed"))
+	void BP_OnLunarVisualStateChanged(const FLunarUIVisualState& PreviousState, const FLunarUIVisualState& NewState, bool bIsDesignerPreview);
 private:
 	/** @return Navigation subsystem for the owning local player, or nullptr when unavailable. */
 	ULunarNavigationSubsystem* ResolveNavigationSubsystem() const;
@@ -360,26 +386,30 @@ private:
 	void ClearInputPromptSnapshot(bool bForceDelivery = false);
 	/** @brief Applies the configured prompt visibility policy to the Slate host. */
 	void UpdateInputPromptHostVisibility();
-	/** @return True when visibility, enabled state, and pointer policy permit interaction. */
+	/** @brief Starts hold timing for the current valid press and emits its immediate zero sample. */
+	void BeginLunarHoldTracking();
+	/** @param DeltaSeconds Non-negative frame time used to advance active hold timing. */
+	void AdvanceLunarHoldTracking(float DeltaSeconds);
+	/** @brief Stops hold timing and clears all transient duration state. */
+	void ResetLunarHoldTracking();
+	/** @return True when visibility and the complete Lunar/native enabled hierarchy permit activation. */
 	bool IsEffectivelyInteractive() const;
+	/** @param bAllowSelfDisabled Whether this widget's own Lunar disabled state may be inspected. @return True when visibility and ancestor availability permit the requested use. */
+	bool IsLunarHierarchyAvailable(bool bAllowSelfDisabled) const;
+	/** @return True when pointer presentation is allowed for an enabled control or an inspectable disabled control. */
+	bool CanReceiveLunarPointerPresentation() const;
+	/** @return True when pointer input selected this widget, releasing ScrollBox confinement when crossing its boundary. */
+	bool RequestLunarPointerSelection();
+	/** @param bInputAllowed Whether the direct-input channel is enabled. @return True when this logically disabled control may receive selection and rejected activation from that channel. */
+	bool CanInspectDisabledControlWithDirectInput(bool bInputAllowed) const;
 	/** @brief Synchronizes accessible behavior, name, description, and value. */
 	void SynchronizeLunarAccessibility();
-	/** @brief Captures authored common presentation values used as the style baseline. */
-	void EnsureStyleBaseline();
-	/** @brief Captures authored presentation for descendant text blocks. */
-	void EnsureTextBlockStyleBaselines();
-	/** @param ResolvedStyle Common patch whose text fields should be applied to descendants. */
-	void ApplyResolvedTextStyle(const FLunarCommonStylePatch& ResolvedStyle);
-	/** @param NewTarget Newly resolved authored target patch. */
-	void ApplyStyleTarget(const FLunarCommonStylePatch& NewTarget);
-	/** @param NewDisplayedStyle Materialized or interpolated style to paint now. */
-	void ApplyDisplayedStyle(const FLunarCommonStylePatch& NewDisplayedStyle);
 	/** @brief Resolves and plays selected feedback. */
 	void PlaySelectedFeedback();
 	/** @brief Resolves and plays pressed feedback. */
 	void PlayPressedFeedback();
-	/** @brief Resolves and plays activation feedback. */
-	void PlayActivatedFeedback();
+	/** @brief Resolves and plays successful-click feedback. */
+	void PlayClickedFeedback();
 	/** @brief Resolves and plays rejection feedback. */
 	void PlayRejectedFeedback();
 	/** @brief Resolves and plays pointer-hover feedback. */
@@ -394,72 +424,44 @@ private:
 	UPROPERTY(Transient) bool bPointerPressed = false;
 	/** Whether the current pointer press remains within activation tolerance. */
 	UPROPERTY(Transient) bool bPointerActivationEligible = false;
-	/** Whether semantic navigation activation is currently held. */
+	/** Whether the active pointer press is presentation-only and must finish with Rejected instead of Pressed, Hold, or activation. */
+	UPROPERTY(Transient) bool bPointerPressRejected = false;
+	/** Whether semantic navigation click is currently held. */
 	UPROPERTY(Transient) bool bNavigationPressed = false;
+	/** Whether a rejected semantic press is held to expose the Disabled + Navigation Pressed state combination. */
+	UPROPERTY(Transient) bool bRejectedNavigationPressed = false;
+	/** Whether a valid pointer, touch, or semantic press currently owns hold timing. */
+	UPROPERTY(Transient) bool bLunarHoldTracking = false;
+	/** Whether HoldStartDelay has elapsed for the current valid press. */
+	UPROPERTY(Transient) bool bLunarHoldDelayElapsed = false;
+	/** Active hold time accumulated after HoldStartDelay elapses. */
+	UPROPERTY(Transient) float LunarHoldSeconds = 0.0f;
+	/** Total physical press time accumulated since Pressed, including HoldStartDelay. */
+	UPROPERTY(Transient) float LunarPressedSeconds = 0.0f;
 	/** Whether prompt output must be resolved before presentation. */
 	UPROPERTY(Transient) bool bPromptDirty = true;
 	/** Instantiated widget that receives prompt snapshots. */
 	UPROPERTY(Transient) TObjectPtr<UUserWidget> InputPromptReceiver;
-	/** Concrete control value-state tag used by style resolution. */
+	/** Concrete control value-state tag published to Blueprint presentation. */
 	UPROPERTY(Transient) FGameplayTag CurrentValueStateTag;
 	/** Last visual-state descriptor broadcast to observers. */
 	UPROPERTY(Transient) FLunarUIVisualState CurrentVisualState;
-	/** Complete common style currently displayed. */
-	UPROPERTY(Transient) FLunarCommonStylePatch DisplayedCommonStyle;
-	/** Complete materialized style captured at transition start. */
-	UPROPERTY(Transient) FLunarCommonStylePatch TransitionSourceCommonStyle;
-	/** Complete materialized style targeted by the active transition. */
-	UPROPERTY(Transient) FLunarCommonStylePatch TransitionTargetCommonStyle;
-	/** Complete materialized style represented by current logical state. */
-	UPROPERTY(Transient) FLunarCommonStylePatch LogicalTargetCommonStyle;
+	/** Previously published visual state supplied to the next transition event. */
+	UPROPERTY(Transient) FLunarUIVisualState LastPublishedVisualState;
+	/** Whether at least one visual-state publication has occurred. */
+	UPROPERTY(Transient) bool bHasPublishedVisualState = false;
 	/** Editable descendant whose text was captured when focus delegation began. */
 	UPROPERTY(Transient) TWeakObjectPtr<UWidget> DelegatedFocusTextSnapshotWidget;
 	/** Text restored if the delegated editing session is cancelled. */
 	UPROPERTY(Transient) FText DelegatedFocusTextSnapshot;
 	/** Whether delegated focus owns a valid editable-text snapshot. */
 	UPROPERTY(Transient) bool bHasDelegatedFocusTextSnapshot = false;
-	/** Captured authored common presentation used to fill sparse style patches. */
-	FLunarCommonStylePatch StyleBaselineCommonStyle;
-	/** Sparse authored source patch retained for reversible transitions. */
-	FLunarCommonStylePatch TransitionSourceAuthoredCommonStyle;
-	/** Sparse authored target patch retained for reversible transitions. */
-	FLunarCommonStylePatch TransitionTargetAuthoredCommonStyle;
-	/** Sparse authored patch for the current logical state. */
-	FLunarCommonStylePatch LogicalTargetAuthoredCommonStyle;
-	/** Captured text-block baselines and transition sources. */
-	TArray<FLunarTextBlockStyleBaseline> TextBlockStyleBaselines;
-	/** Slate layer applying resolved desired-size constraints. */
-	TSharedPtr<SBox> LunarStyleSizeBox;
-	/** Slate layer applying outer padding. */
-	TSharedPtr<SBorder> LunarOuterPaddingLayer;
-	/** Slate layer applying border brush, padding, and tint. */
-	TSharedPtr<SBorder> LunarBorderLayer;
-	/** Slate layer resolving semantic foreground colors against inherited style. */
-	TSharedPtr<SLunarContentStyleLayer> LunarContentStyleLayer;
-	/** Slate image used for resolved background presentation. */
-	TSharedPtr<SImage> LunarBackgroundImage;
-	/** Slate image used for resolved foreground presentation. */
-	TSharedPtr<SImage> LunarForegroundImage;
 	/** Slate host containing the optional prompt receiver. */
 	TSharedPtr<SBox> LunarInputPromptHost;
 	/** Subscription to owning-subsystem input presentation changes. */
 	FDelegateHandle InputPresentationChangedHandle;
 	/** Screen position captured at pointer press for drag-tolerance checks. */
 	FVector2D PointerPressScreenPosition = FVector2D::ZeroVector;
-	/** Elapsed seconds in the active style transition. */
-	float StyleTransitionElapsed = 0.0f;
-	/** Total duration in seconds of the active style transition. */
-	float StyleTransitionDuration = 0.0f;
-	/** Whether a visual style interpolation is in progress. */
-	bool bStyleTransitionActive = false;
-	/** Whether the transition is reversing toward its previous authored state. */
-	bool bStyleTransitionReversing = false;
-	/** Whether text interpolation uses per-text-block captured source colors. */
-	bool bUseCapturedTextTransitionSource = false;
-	/** Whether DisplayedCommonStyle contains a previously applied snapshot. */
-	bool bHasDisplayedStyle = false;
-	/** Whether authored baseline presentation has been captured. */
-	bool bHasStyleBaseline = false;
 	/** Reentrancy guard for prompt resolution and receiver delivery. */
 	bool bPromptUpdateInProgress = false;
 	/** Whether a prompt clear was requested during an in-progress update. */

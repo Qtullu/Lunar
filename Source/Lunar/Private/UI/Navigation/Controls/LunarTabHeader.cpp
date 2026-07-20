@@ -2,14 +2,13 @@
 
 /**
  * @file LunarTabHeader.cpp
- * @brief Implements owner-routed navigation, activation, and presentation for generated tab headers.
+ * @brief Implements owner-routed navigation, activation, and visual-state publication for generated tab headers.
  * @ingroup LunarNavigationControls
  */
 
 #include "UI/Navigation/Controls/LunarTabHeader.h"
 
 #include "UI/Navigation/Controls/LunarTabs.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
 
 #define LOCTEXT_NAMESPACE "LunarTabHeader"
@@ -153,60 +152,11 @@ FText ULunarTabHeader::NativeGetLunarAccessibleValueText() const
 		: LOCTEXT("InactiveTabAccessibleValue", "Inactive tab");
 }
 
-bool ULunarTabHeader::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	OutStyle = FLunarCommonStylePatch();
-	if (TabsOwner)
-	{
-		const FLunarCommonStylePatch EmptyHeaderOverrides;
-		if (!TabsOwner->ResolveHeaderStyle(
-			GetLunarVisualState(),
-			StyleAsset ? EmptyHeaderOverrides : StyleOverrides,
-			OutStyle,
-			nullptr,
-			OutError))
-		{
-			return false;
-		}
-	}
-
-	if (StyleAsset)
-	{
-		FLunarCommonStylePatch AssignedHeaderStyle;
-		if (!LunarStyleResolver::ResolveButtonCommonStyle(
-			StyleAsset,
-			GetLunarVisualState(),
-			StyleOverrides,
-			AssignedHeaderStyle,
-			&OutError))
-		{
-			return false;
-		}
-		LunarStyleResolver::MergeCommonStylePatch(OutStyle, AssignedHeaderStyle);
-	}
-	else if (!TabsOwner)
-	{
-		LunarStyleResolver::MergeCommonStylePatch(OutStyle, StyleOverrides);
-	}
-	return true;
-}
-
-void ULunarTabHeader::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	Super::ApplyResolvedCommonStyle(ResolvedStyle);
-	if (TabsOwner)
-	{
-		// This path runs for every style resolution, including unchanged visual state
-		// and asset reset, so the Tabs-owned indicator cannot retain stale visuals.
-		TabsOwner->ApplyHeaderPresentation(this, GetLunarVisualState());
-	}
-}
-
 void ULunarTabHeader::InitializeTabHeader(
 	ULunarTabs* InTabsOwner,
 	const FName InTabId,
 	const bool bInEnabled,
-	const FText& InDisabledReason)
+	const FString& InDisabledReason)
 {
 	TabsOwner = InTabsOwner;
 	TabId = InTabId;

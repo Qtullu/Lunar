@@ -31,14 +31,19 @@ public:
 	/**
 	 * @brief Performs the same guarded activation used by pointer and navigation release
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Button")
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Button")
 	void Click();
 
-	/** Broadcast after the button completes a permitted activation. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Button")
+	/** Broadcast after the button completes a permitted activation, passing this button to external observers. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Button")
 	FLunarButtonClickedSignature OnClicked;
 
 protected:
+
+	/** @brief Blueprint override invoked after this button completes a permitted activation. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Lunar|UI|Button|Events", meta = (DisplayName = "On Lunar Clicked"))
+	void BP_OnLunarClicked();
+
 	/**
 	 * @brief Checks whether this button can consume a semantic Lunar action
 	 * @param ActionContext Semantic action and input context being queried
@@ -53,14 +58,7 @@ protected:
 	 */
 	virtual ELunarUIActionResult NativeHandleLunarAction(const FLunarUIActionContext& ActionContext) override;
 
-	/** @brief Broadcasts the button-specific click event after Lunar activation. */
+	/** @brief Invokes the button Blueprint override and multicast click event after Lunar activation. */
 	virtual void NativeOnLunarActivated() override;
 
-	/**
-	 * @brief Resolves the compatible button style chain into a common style patch
-	 * @param OutStyle Receives the resolved common style values
-	 * @param OutError Receives a configuration error when resolution fails
-	 * @return True when the button style was resolved successfully
-	 */
-	virtual bool ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const override;
 };

@@ -72,7 +72,7 @@ bool ULunarScreenWidget::OpenScreen()
 	}
 
 	bScreenOpen = true;
-	OnScreenOpened.Broadcast();
+	OnScreenOpened.Broadcast(this);
 	const bool bShouldClose = bCloseRequestedWhileOpening;
 	bCloseRequestedWhileOpening = false;
 	if (bShouldClose && bScreenOpen)
@@ -137,5 +137,5 @@ void ULunarScreenWidget::HandleNavigationScopePopped()
 	}
 
 	bScreenOpen = false;
-	OnScreenClosed.Broadcast();
+	OnScreenClosed.Broadcast(this);
 }

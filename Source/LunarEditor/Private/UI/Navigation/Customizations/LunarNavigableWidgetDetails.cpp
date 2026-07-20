@@ -46,15 +46,16 @@ void FLunarNavigableWidgetDetails::CustomizeDetails(IDetailLayoutBuilder& Detail
 	}
 
 	DetailBuilder.HideProperty(GET_MEMBER_NAME_CHECKED(UWidget, Navigation), UWidget::StaticClass());
+	DetailBuilder.HideProperty(TEXT("bIsEnabled"), UWidget::StaticClass());
 	DetailBuilder.HideProperty(TEXT("bIsFocusable"), UUserWidget::StaticClass());
 	DetailBuilder.HideProperty(TEXT("bIsFocusable"), UScrollBox::StaticClass());
 
 	IDetailCategoryBuilder& LunarCategory = DetailBuilder.EditCategory(
-		TEXT("Lunar|UI|Navigation"),
+		TEXT("LunarNavigationEditor"),
 		LOCTEXT("LunarNavigationCategory", "Lunar Navigation"),
 		ECategoryPriority::Important);
 
-	LunarCategory.AddCustomRow(LOCTEXT("ManagedNativeNavigationSearch", "Native UMG Navigation Focus Lunar"))
+	LunarCategory.AddCustomRow(LOCTEXT("ManagedNativeNavigationSearch", "Native UMG Navigation Focus Enabled Lunar"))
 		.WholeRowContent()
 		[
 			SNew(SHorizontalBox)
@@ -72,7 +73,7 @@ void FLunarNavigableWidgetDetails::CustomizeDetails(IDetailLayoutBuilder& Detail
 				SNew(STextBlock)
 				.Text(LOCTEXT(
 					"ManagedNativeNavigationMessage",
-					"Native UMG navigation and focusability are managed internally by Lunar. Configure Lunar links and selection eligibility on selectable controls; configure scope or scroll behavior on Lunar containers."))
+					"Native UMG navigation, focusability, and enabled presentation are managed internally by Lunar. Use Lunar Enabled for logical availability, style Disabled through Lunar value and interaction states, and configure Lunar links and selection eligibility on selectable controls."))
 				.AutoWrapText(true)
 			]
 		];

@@ -19,8 +19,18 @@
  */
 
 class ULocalPlayer;
+class ULunarButton;
+class ULunarComboBox;
+class ULunarContextMenu;
+class ULunarListView;
 class ULunarNavigableWidget;
 class ULunarNavigationScope;
+class ULunarOptionSlider;
+class ULunarRadio;
+class ULunarScrollBox;
+class ULunarSlider;
+class ULunarSwitch;
+class ULunarTabs;
 
 /** @brief Cardinal direction used by Lunar navigation. @ingroup LunarNavigationTypes */
 UENUM(BlueprintType)
@@ -54,6 +64,22 @@ enum class ELunarUIInteractionState : uint8
 	NavigationPressed    ///< Navigation mode while the selected control is pressed.
 };
 
+/** @brief Identifies one independently interactive native OptionSlider arrow. @ingroup LunarNavigationTypes */
+UENUM(BlueprintType)
+enum class ELunarOptionSliderArrow : uint8
+{
+	Previous UMETA(DisplayName = "Previous Arrow"), ///< Arrow that selects the preceding option.
+	Next UMETA(DisplayName = "Next Arrow")          ///< Arrow that selects the following option.
+};
+
+/** @brief Selects whether Designer uses live defaults or an editor-only custom visual state. @ingroup LunarNavigationTypes */
+UENUM(BlueprintType)
+enum class ELunarVisualStatePreviewMode : uint8
+{
+	None, ///< Do not override the state resolved from the widget's runtime-compatible defaults.
+	Custom ///< Present an editor-only custom preview state while the widget is at design time.
+};
+
 /** @brief Result returned by a Lunar control after semantic action dispatch. @ingroup LunarNavigationTypes */
 UENUM(BlueprintType)
 enum class ELunarUIActionResult : uint8
@@ -63,13 +89,14 @@ enum class ELunarUIActionResult : uint8
 	Rejected   ///< The control consumed the action but rejected the requested operation.
 };
 
-/** @brief Movement mode used when revealing a selected widget in a scroll container. @ingroup LunarNavigationTypes */
+/** @brief Controls whether a programmatic state mutation publishes its normal owner notifications. @ingroup LunarNavigationTypes */
 UENUM(BlueprintType)
-enum class ELunarScrollIntoViewMode : uint8
+enum class ELunarChangeNotificationPolicy : uint8
 {
-	Immediate, ///< Reveal the target without interpolation.
-	Smooth     ///< Interpolate the scroll position toward the target.
+	Notify, ///< Publish the control's normal Blueprint events, delegates, feedback, and accessibility value-change notification.
+	Silent  ///< Update state and presentation without publishing owner or accessibility value-change notifications.
 };
+
 
 /** @brief Cursor-visibility policy contributed by a navigation scope. @ingroup LunarNavigationTypes */
 UENUM(BlueprintType)
@@ -96,6 +123,14 @@ enum class ELunarSliderStepMode : uint8
 {
 	Absolute,  ///< Treat the step as an absolute value delta.
 	Percentage ///< Treat the step as a fraction of the slider range.
+};
+
+/** @brief How left-stick input changes a Slider value. @ingroup LunarNavigationTypes */
+UENUM(BlueprintType)
+enum class ELunarSliderStickInputMode : uint8
+{
+	Stepped,   ///< Apply the configured navigation step and repeat timing.
+	Continuous ///< Change continuously according to stick magnitude and elapsed time.
 };
 
 /** @brief When a Slider preview becomes its committed value. @ingroup LunarNavigationTypes */
@@ -214,28 +249,6 @@ struct LUNAR_API FLunarAnalogNavigationSettings
 	float DirectionChangeDominanceMargin = 0.15f;
 };
 
-/** @brief Per-container behavior for revealing the current selection. @ingroup LunarNavigationTypes */
-USTRUCT(BlueprintType)
-struct LUNAR_API FLunarScrollIntoViewSettings
-{
-	GENERATED_BODY()
-
-	/** Whether the reveal occurs immediately or through smooth interpolation. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	ELunarScrollIntoViewMode Mode = ELunarScrollIntoViewMode::Immediate;
-
-	/** Safe padding retained between the selected widget and viewport edges. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	FMargin ViewportPadding = FMargin(0.0f);
-
-	/** Duration of a smooth reveal transition in seconds. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
-	float TransitionDuration = 0.20f;
-
-	/** Maximum smooth scrolling speed in Slate units per second. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation", meta = (ClampMin = "0.0", UIMin = "0.0"))
-	float ScrollSpeed = 1200.0f;
-};
 
 /** @brief Cursor and pointer-capture behavior contributed by a scope. @ingroup LunarNavigationTypes */
 USTRUCT(BlueprintType)
@@ -320,9 +333,9 @@ struct LUNAR_API FLunarUIActionDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
 	TArray<FLunarUIActionBinding> Bindings;
 
-	/** Localized label displayed when no more specific prompt text is available. */
+	/** User-facing label displayed when no more specific prompt text is available. Defaults non-localizable; authors may enable localization explicitly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	FText DisplayText;
+	FText DisplayText = FText::AsCultureInvariant(TEXT(""));
 };
 
 /** @brief Fully resolved semantic action passed through the Lunar control dispatch chain. @ingroup LunarNavigationTypes */
@@ -358,6 +371,14 @@ struct LUNAR_API FLunarUIActionContext
 	/** True when this action originates from held-input repeat. */
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|UI|Navigation")
 	bool bIsRepeat = false;
+
+	/** True while the range-selection modifier is held (Shift on keyboard, LB/L1 on gamepad). */
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|UI|Navigation")
+	bool bRangeSelectionModifier = false;
+
+	/** True while the additive-selection modifier is held (Ctrl on keyboard, RB/R1 on gamepad). */
+	UPROPERTY(BlueprintReadOnly, Category = "Lunar|UI|Navigation")
+	bool bAdditiveSelectionModifier = false;
 
 	/** Normalized analog magnitude used to derive repeat cadence. */
 	UPROPERTY(BlueprintReadOnly, Category = "Lunar|UI|Navigation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -401,9 +422,9 @@ struct LUNAR_API FLunarComboBoxOption
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
 	FName OptionId = NAME_None;
 
-	/** Localized label presented for this option. */
+	/** User-facing label presented for this option. Defaults non-localizable; authors may enable localization explicitly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	FText DisplayText;
+	FText DisplayText = FText::AsCultureInvariant(TEXT(""));
 
 	/** Allows the option to be accepted. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
@@ -413,9 +434,9 @@ struct LUNAR_API FLunarComboBoxOption
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
 	bool bCanReceiveSelectionWhenDisabled = false;
 
-	/** Localized explanation surfaced when the option cannot be accepted. */
+	/** Non-localized explanation surfaced when the option cannot be accepted. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	FText DisabledReason;
+	FString DisabledReason;
 
 	/** Optional owner-defined data associated with the option. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
@@ -448,9 +469,9 @@ struct LUNAR_API FLunarTabDescriptor
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
 	bool bEnabled = true;
 
-	/** Localized explanation surfaced when the tab cannot be activated. */
+	/** Non-localized explanation surfaced when the tab cannot be activated. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	FText DisabledReason;
+	FString DisabledReason;
 };
 
 /** @brief One actionable validation result emitted by Lunar Navigation. @ingroup LunarNavigationTypes */
@@ -482,31 +503,55 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarSelectionChangedSignature, UL
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarActiveScopeChangedSignature, ULunarNavigationScope*, PreviousScope, ULunarNavigationScope*, NewScope);
 /** @brief Broadcast when a navigable widget rejects a semantic action. @ingroup LunarNavigationTypes */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarNavigationRejectedSignature, ULunarNavigableWidget*, Widget, const FLunarUIActionContext&, ActionContext);
-/** @brief Parameterless event emitted by a navigable widget. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarNavigableWidgetEventSignature);
+/** @brief Event emitted by a navigable widget with its source object. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarNavigableWidgetEventSignature, ULunarNavigableWidget*, Widget);
+/** @brief Broadcast while a valid Lunar press is held, including local-delay state. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(
+	FLunarHoldProgressSignature,
+	ULunarNavigableWidget*, Widget,
+	float, HoldSeconds,
+	float, PressedSeconds,
+	float, DelayLeft,
+	bool, bDelayElapsed);
+/** @brief Broadcast when a navigable widget observes a new presentation device. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarNavigableInputDeviceChangedSignature, ULunarNavigableWidget*, Widget, ELunarInputDeviceType, NewInputDevice);
 /** @brief Broadcast when a control resolves a new visual state. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarVisualStateChangedSignature, const FLunarUIVisualState&, VisualState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+	FLunarVisualStateChangedSignature,
+	ULunarNavigableWidget*, Widget,
+	const FLunarUIVisualState&, PreviousState,
+	const FLunarUIVisualState&, NewState,
+	bool, bIsDesignerPreview);
 /** @brief Broadcast after a Lunar Button completes a click. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarButtonClickedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarButtonClickedSignature, ULunarButton*, ClickedButton);
 /** @brief Broadcast when a Slider preview value changes. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarSliderValueChangedSignature, float, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarSliderValueChangedSignature, ULunarSlider*, Slider, float, NewValue);
 /** @brief Broadcast when a Slider value is committed. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarSliderValueCommittedSignature, float, CommittedValue);
-/** @brief Broadcast when an OptionSlider selects a new index. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarOptionSliderIndexChangedSignature, int32, NewIndex);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarSliderValueCommittedSignature, ULunarSlider*, Slider, float, CommittedValue);
+/** @brief Broadcast when an OptionSlider selects a new localized option. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLunarOptionSliderIndexChangedSignature, ULunarOptionSlider*, OptionSlider, int32, NewIndex, FText, NewOption);
+/** @brief Broadcast once for each OptionSlider arrow whose independently resolved interaction state changes. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_SixParams(
+	FLunarOptionSliderArrowVisualStateChangedSignature,
+	ULunarOptionSlider*, OptionSlider,
+	ELunarOptionSliderArrow, ChangedArrow,
+	ELunarUIInteractionState, NewState,
+	ELunarOptionSliderArrow, OtherArrow,
+	ELunarUIInteractionState, OtherArrowState,
+	bool, bIsDesignerPreview);
 /** @brief Broadcast when a Switch changes its Boolean value. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarSwitchChangedSignature, bool, bIsOn);
-/** @brief Broadcast when a Radio control changes checked state. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarRadioCheckedChangedSignature, bool, bIsChecked);
-/** @brief Broadcast when a RadioGroup selects a different radio identifier. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarRadioGroupSelectionChangedSignature, FName, PreviousRadioId, FName, NewRadioId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarSwitchChangedSignature, ULunarSwitch*, Switch, bool, bIsOn);
+/** @brief Broadcast whenever a Switch handle's rendered interpolation alpha changes. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarSwitchDisplayedHandleAlphaChangedSignature, ULunarSwitch*, Switch, float, DisplayedHandleAlpha);
 /** @brief Broadcast when the navigation-relevant ScrollBox state changes. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarScrollStateChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarScrollStateChangedSignature, ULunarScrollBox*, ScrollBox);
 /** @brief Broadcast when a ListView activates a different item identifier. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarListViewActiveItemChangedSignature, FName, PreviousItemId, FName, NewItemId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLunarListViewActiveItemChangedSignature, ULunarListView*, ListView, FName, PreviousItemId, FName, NewItemId);
 /** @brief Broadcast when a ComboBox selects a different option identifier. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarComboBoxSelectionChangedSignature, FName, PreviousOptionId, FName, NewOptionId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLunarComboBoxSelectionChangedSignature, ULunarComboBox*, ComboBox, FName, PreviousOptionId, FName, NewOptionId);
+/** @brief Broadcast when a ComboBox opens or closes, including its source object. @ingroup LunarNavigationTypes */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarComboBoxStateChangedSignature, ULunarComboBox*, ComboBox);
 /** @brief Broadcast when a ContextMenu opens, closes, or changes submenu state. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarContextMenuStateChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarContextMenuStateChangedSignature, ULunarContextMenu*, ContextMenu);
 /** @brief Broadcast when a Tabs control activates a different tab identifier. @ingroup LunarNavigationTypes */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLunarTabsActiveTabChangedSignature, FName, PreviousTabId, FName, NewTabId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLunarTabsActiveTabChangedSignature, ULunarTabs*, Tabs, FName, PreviousTabId, FName, NewTabId);

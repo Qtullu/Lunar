@@ -73,15 +73,15 @@ Implementation follows `docs/UI_NAVIGATION_SPEC.md` in strict phase order. Runti
   - [x] Synchronize authoritative Lunar Selection with native focus and explicit native-focus delegation
 - [x] **Phase 3 — Base Widget And Button**
   - [x] Implement `ULunarNavigableWidget`, shared state, feedback, prompt, accessibility, pointer, and scroll hooks
-  - [x] Implement `ULunarScrollBox` as the supported non-selectable navigation container
+  - [x] Implement `ULunarScrollBox` as the supported non-selectable vertical/horizontal container with explicit Orientation, local wrap, optional navigation confinement and navigation-Accept exit, immediate pointer boundary crossing, curve-based reveal interpolation, safe Slate teardown, and nested direct-scroll chaining
   - [x] Implement `ULunarButton` as the reference release-activated control
   - [x] Document owner-performed `W_Button` reparenting and binding without changing the asset
 - [x] **Phase 4 — Value Controls**
   - [x] Implement Slider and OptionSlider orientation, stepping, preview, commit, cancellation, wrap, and repeat behavior
   - [x] Implement Switch directional modes
-  - [x] Implement Radio and non-visual Radio Group selection rules
+  - [x] Implement composite Radio generation, required internal selection, inline state styles, optional Side Visual data, pointer/navigation behavior, wrap, and Checked interpolation
 - [x] **Phase 5 — Composite Controls**
-  - [x] Implement ListView logical selection, virtualization, stable item IDs, scrolling, and restoration
+  - [x] Implement ListView inline item data, optional non-navigable Blueprint entries, logical selection, virtualization, stable item IDs, scrolling, activation, and restoration
   - [x] Implement ComboBox filtering and nested option scope
   - [x] Implement ContextMenu and one-scope-at-a-time submenu Back behavior
   - [x] Implement horizontal and vertical Tabs, page lifetimes, and descendant restoration
@@ -101,6 +101,12 @@ Implementation follows `docs/UI_NAVIGATION_SPEC.md` in strict phase order. Runti
 Phase 7 C++ implementation, editor integration, diagnostics, and documentation are complete. The phase remains open only for the owner-run Content integration, device matrix, gameplay-input isolation check, and any resulting screenshots or examples.
 
 The next owner pass is tracked as a strict one-widget-at-a-time sequence in [UI Navigation Owner Handoff — Ordered Widget Test And Defaults Queue](docs/UI_NAVIGATION_OWNER_HANDOFF.md#7-ordered-widget-test-and-defaults-queue). Verify each row before assigning its default assets or moving to the next control.
+
+After every existing row in that queue is verified and the current navigation system is stable, complete one deferred control-extension pass before creating final examples and end-user documentation:
+
+- [ ] Design, implement, and manually verify a Lunar key-selector control for game-settings rebinding, including capture, cancel/clear, conflict, device presentation, accessibility, and stable navigation behavior.
+- [ ] Design, implement, and manually verify Lunar float and integer spin-box controls with type-appropriate ranges, steps, limits, optional repeat and interpolation, owner-defined value formatting/presentation, and complete Blueprint getters, setters, and change delegates.
+- [ ] Only after those deferred controls pass the same owner verification gate, create the final Content examples, screenshots, tutorial, troubleshooting guide, and complete navigation documentation.
 
 M1 is complete when the C++ system builds on UE 5.8 Win64 and, after owner Content integration, the example menu can be operated without a mouse, focus never becomes lost, input prompts update on device change, handled UI input cannot reach gameplay, and every supported control follows the shared contract.
 

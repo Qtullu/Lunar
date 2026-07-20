@@ -2,7 +2,7 @@
 
 /**
  * @file LunarListView.cpp
- * @brief Implements virtualized item ownership, input, restoration, and presentation for ULunarListView.
+ * @brief Implements inline item data, virtualized entry presentation, navigation, restoration, and scrolling.
  * @ingroup LunarNavigationControls
  */
 
@@ -13,10 +13,11 @@
 #include "Framework/Application/SlateUser.h"
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
+#include "Styling/StyleDefaults.h"
 #include "Subsystems/Console/LunarConsoleSubsystem.h"
-#include "UI/Navigation/Controls/LunarListViewItem.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
+#include "UI/Navigation/Controls/LunarListViewEntry.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
@@ -26,10 +27,74 @@
 /** Private log channel for actionable ListView configuration failures. */
 DEFINE_LOG_CATEGORY_STATIC(LogLunarListView, Log, All);
 
-/** Private helpers for translating ListView action tags. */
+/** @brief Private helpers for ListView input and presentation. */
 namespace LunarListView_Private
 {
-	/** Maps a canonical navigation action tag to its direction. @param ActionTag Canonical action tag. @param OutDirection Resolved direction. @return True when the tag is directional. */
+	/**
+	 * Paints and hit-tests like a normal table row while leaving pointer/touch
+	 * ownership to the composite ULunarListView that owns every virtual row.
+	 */
+	class SLunarListViewPassthroughRow final : public STableRow<UObject*>
+	{
+	public:
+		SLATE_BEGIN_ARGS(SLunarListViewPassthroughRow)
+			: _Style(&FCoreStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("TableView.Row")))
+			, _Content()
+		{
+		}
+
+			SLATE_STYLE_ARGUMENT(FTableRowStyle, Style)
+			SLATE_DEFAULT_SLOT(FArguments, Content)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTable)
+		{
+			STableRow<UObject*>::Construct(
+				STableRow<UObject*>::FArguments()
+				.Style(InArgs._Style)
+				[
+					InArgs._Content.Widget
+				],
+				InOwnerTable);
+		}
+
+		virtual FReply OnMouseButtonDown(
+			const FGeometry&,
+			const FPointerEvent&) override
+		{
+			return FReply::Unhandled();
+		}
+
+		virtual FReply OnMouseButtonUp(
+			const FGeometry&,
+			const FPointerEvent&) override
+		{
+			return FReply::Unhandled();
+		}
+
+		virtual FReply OnMouseButtonDoubleClick(
+			const FGeometry&,
+			const FPointerEvent&) override
+		{
+			return FReply::Unhandled();
+		}
+
+		virtual FReply OnTouchStarted(
+			const FGeometry&,
+			const FPointerEvent&) override
+		{
+			return FReply::Unhandled();
+		}
+
+		virtual FReply OnTouchEnded(
+			const FGeometry&,
+			const FPointerEvent&) override
+		{
+			return FReply::Unhandled();
+		}
+	};
+
+	/** Maps a canonical navigation action to its direction. @param ActionTag Canonical action tag. @param OutDirection Resolved direction. @return True when directional. */
 	bool ActionToDirection(const FGameplayTag& ActionTag, ELunarNavigationDirection& OutDirection)
 	{
 		using namespace LunarGameplayTags;
@@ -63,23 +128,144 @@ ULunarListView::ULunarListView(const FObjectInitializer& ObjectInitializer)
 	bCanReceiveLunarSelection = true;
 	bCanInteractWithPointer = true;
 	bEnableInputPrompt = true;
+	RowPresentationStyle = FCoreStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("TableView.Row"));
+	ScrollBarPresentationStyle = FAppStyle::Get().GetWidgetStyle<FScrollBarStyle>(TEXT("ScrollBar"));
+	FallbackTextStyle = FCoreStyle::Get().GetWidgetStyle<FTextBlockStyle>(TEXT("NormalText"));
 
 	FLunarPromptActionRequest AcceptPrompt;
 	AcceptPrompt.ActionTag = LunarGameplayTags::UI_Action_Accept.GetTag();
 	PromptActions.Add(AcceptPrompt);
 }
 
-void ULunarListView::SetItems(const TArray<UObject*>& NewItems)
+void ULunarListView::SetItems(
+	const TArray<FLunarListViewItemData>& NewItems,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
 {
-	Items.Reset(NewItems.Num());
-	for (UObject* Item : NewItems)
-	{
-		Items.Add(Item);
-	}
-	RefreshNavigationItems();
+	Items = NewItems;
+	RefreshNavigationItems(NotificationPolicy);
 }
 
-bool ULunarListView::SetActiveItemById(const FName ItemId)
+bool ULunarListView::AddItem(
+	const FLunarListViewItemData& NewItem,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	if (NewItem.ItemId.IsNone()
+		|| Items.ContainsByPredicate([&NewItem](const FLunarListViewItemData& Item)
+		{
+			return Item.ItemId == NewItem.ItemId;
+		}))
+	{
+		return false;
+	}
+
+	Items.Add(NewItem);
+	RefreshNavigationItems(NotificationPolicy);
+	return true;
+}
+
+bool ULunarListView::AddItems(
+	const TArray<FLunarListViewItemData>& NewItems,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	TSet<FName> KnownItemIds;
+	KnownItemIds.Reserve(Items.Num() + NewItems.Num());
+	for (const FLunarListViewItemData& Item : Items)
+	{
+		if (!Item.ItemId.IsNone())
+		{
+			KnownItemIds.Add(Item.ItemId);
+		}
+	}
+
+	for (const FLunarListViewItemData& NewItem : NewItems)
+	{
+		if (NewItem.ItemId.IsNone() || KnownItemIds.Contains(NewItem.ItemId))
+		{
+			return false;
+		}
+		KnownItemIds.Add(NewItem.ItemId);
+	}
+
+	if (!NewItems.IsEmpty())
+	{
+		Items.Append(NewItems);
+		RefreshNavigationItems(NotificationPolicy);
+	}
+	return true;
+}
+
+bool ULunarListView::RemoveItem(
+	const FName ItemId,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const int32 ItemIndex = Items.IndexOfByPredicate([ItemId](const FLunarListViewItemData& Item)
+	{
+		return Item.ItemId == ItemId;
+	});
+	if (ItemIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	Items.RemoveAt(ItemIndex);
+	RefreshNavigationItems(NotificationPolicy);
+	return true;
+}
+
+int32 ULunarListView::RemoveItems(
+	const TArray<FName>& ItemIds,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	TSet<FName> ItemIdsToRemove;
+	ItemIdsToRemove.Reserve(ItemIds.Num());
+	for (const FName ItemId : ItemIds)
+	{
+		if (!ItemId.IsNone())
+		{
+			ItemIdsToRemove.Add(ItemId);
+		}
+	}
+
+	const int32 RemovedCount = Items.RemoveAll([&ItemIdsToRemove](const FLunarListViewItemData& Item)
+	{
+		return ItemIdsToRemove.Contains(Item.ItemId);
+	});
+	if (RemovedCount > 0)
+	{
+		RefreshNavigationItems(NotificationPolicy);
+	}
+	return RemovedCount;
+}
+
+void ULunarListView::ClearItems(const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	Items.Reset();
+	RefreshNavigationItems(NotificationPolicy);
+}
+
+bool ULunarListView::SetItemDataAt(
+	const int32 ItemIndex,
+	const FLunarListViewItemData& NewItemData,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	if (!Items.IsValidIndex(ItemIndex))
+	{
+		return false;
+	}
+
+	Items[ItemIndex] = NewItemData;
+	RefreshNavigationItems(NotificationPolicy);
+	return true;
+}
+
+FLunarListViewItemData ULunarListView::GetItemDataAt(const int32 ItemIndex) const
+{
+	return Items.IsValidIndex(ItemIndex) ? Items[ItemIndex] : FLunarListViewItemData();
+}
+
+bool ULunarListView::SetActiveItemById(
+	const FName ItemId,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
 {
 	const int32* ItemIndex = ItemIndexById.Find(ItemId);
 	if (!ItemIndex || !IsItemEligible(*ItemIndex))
@@ -87,14 +273,25 @@ bool ULunarListView::SetActiveItemById(const FName ItemId)
 		return false;
 	}
 
-	SetActiveItemInternal(*ItemIndex, true);
+	SetActiveItemInternal(
+		*ItemIndex,
+		NotificationPolicy == ELunarChangeNotificationPolicy::Notify);
 	return true;
 }
 
-UObject* ULunarListView::GetActiveItem() const
+FLunarListViewItemData ULunarListView::GetActiveItem() const
 {
-	const int32* ItemIndex = ItemIndexById.Find(ActiveItemId);
-	return ItemIndex && Items.IsValidIndex(*ItemIndex) ? Items[*ItemIndex].Get() : nullptr;
+	const int32 ItemIndex = GetActiveItemIndex();
+	return Items.IsValidIndex(ItemIndex) ? Items[ItemIndex] : FLunarListViewItemData();
+}
+
+int32 ULunarListView::GetActiveItemIndex() const
+{
+	if (const int32* ItemIndex = ItemIndexById.Find(ActiveItemId))
+	{
+		return *ItemIndex;
+	}
+	return INDEX_NONE;
 }
 
 FName ULunarListView::GetActiveItemId() const
@@ -102,15 +299,209 @@ FName ULunarListView::GetActiveItemId() const
 	return ActiveItemId;
 }
 
-void ULunarListView::ClearActiveItem()
+void ULunarListView::ClearActiveItem(const ELunarChangeNotificationPolicy NotificationPolicy)
 {
-	ClearActiveItemInternal(true);
+	ClearActiveItemInternal(NotificationPolicy == ELunarChangeNotificationPolicy::Notify);
 }
 
-void ULunarListView::RefreshNavigationItems()
+void ULunarListView::SetSelectionMode(
+	const ELunarListViewSelectionMode NewSelectionMode,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
 {
+	if (SelectionMode == NewSelectionMode)
+	{
+		return;
+	}
+
+	SelectionMode = NewSelectionMode;
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		const int32 ActiveIndex = GetActiveItemIndex();
+		if (IsItemEligible(ActiveIndex))
+		{
+			ApplySelectedItemIdsInternal({ ActiveItemId }, bNotify, true);
+		}
+		else
+		{
+			ApplySelectedItemIdsInternal({}, bNotify, true);
+		}
+	}
+	else
+	{
+		ApplySelectedItemIdsInternal(SelectedItemIds, bNotify, false);
+		if (SelectionAnchorItemId.IsNone())
+		{
+			SelectionAnchorItemId = ActiveItemId;
+		}
+	}
+}
+
+TArray<FLunarListViewItemData> ULunarListView::GetSelectedItems() const
+{
+	TArray<FLunarListViewItemData> Result;
+	Result.Reserve(SelectedItemIds.Num());
+	for (const FName ItemId : SelectedItemIds)
+	{
+		if (const int32* ItemIndex = ItemIndexById.Find(ItemId); Items.IsValidIndex(ItemIndex ? *ItemIndex : INDEX_NONE))
+		{
+			Result.Add(Items[*ItemIndex]);
+		}
+	}
+	return Result;
+}
+
+bool ULunarListView::IsItemSelected(const FName ItemId) const
+{
+	return !ItemId.IsNone() && SelectedItemIds.Contains(ItemId);
+}
+
+bool ULunarListView::SetItemSelected(
+	const FName ItemId,
+	const bool bSelected,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const int32* ItemIndex = ItemIndexById.Find(ItemId);
+	if (!ItemIndex || !IsItemEligible(*ItemIndex))
+	{
+		return false;
+	}
+
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		if (bSelected)
+		{
+			SetActiveItemInternal(*ItemIndex, bNotify);
+		}
+		else if (SelectedItemIds.Contains(ItemId))
+		{
+			ClearActiveItemInternal(bNotify);
+		}
+		return true;
+	}
+
+	TArray<FName> NewSelectedItemIds = SelectedItemIds;
+	if (bSelected)
+	{
+		NewSelectedItemIds.AddUnique(ItemId);
+	}
+	else
+	{
+		NewSelectedItemIds.Remove(ItemId);
+	}
+	ApplySelectedItemIdsInternal(NewSelectedItemIds, bNotify, false);
+	SelectionAnchorItemId = ItemId;
+	return true;
+}
+
+void ULunarListView::SetSelectedItemIds(
+	const TArray<FName>& NewSelectedItemIds,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
+	const TArray<FName> NormalizedIds = NormalizeSelectedItemIds(NewSelectedItemIds);
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		if (NormalizedIds.IsEmpty())
+		{
+			ClearActiveItemInternal(bNotify);
+		}
+		else
+		{
+			SetActiveItemInternal(ItemIndexById.FindRef(NormalizedIds[0]), bNotify);
+		}
+		return;
+	}
+	ApplySelectedItemIdsInternal(NormalizedIds, bNotify, true);
+}
+
+void ULunarListView::SelectAllItems(const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		int32 ItemIndex = GetActiveItemIndex();
+		if (!IsItemEligible(ItemIndex))
+		{
+			ItemIndex = FindRestoredItemIndex(NAME_None, 0);
+		}
+		if (ItemIndex != INDEX_NONE)
+		{
+			SetActiveItemInternal(ItemIndex, bNotify);
+		}
+		return;
+	}
+
+	TArray<FName> AllEligibleIds;
+	for (int32 ItemIndex = 0; ItemIndex < Items.Num(); ++ItemIndex)
+	{
+		if (IsItemEligible(ItemIndex))
+		{
+			AllEligibleIds.Add(CachedItemIds[ItemIndex]);
+		}
+	}
+	ApplySelectedItemIdsInternal(AllEligibleIds, bNotify, false);
+}
+
+void ULunarListView::ClearSelection(const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		ClearActiveItemInternal(bNotify);
+		return;
+	}
+	ApplySelectedItemIdsInternal({}, bNotify, true);
+}
+
+void ULunarListView::SetRowPresentationStyle(const FTableRowStyle& NewStyle)
+{
+	RowPresentationStyle = NewStyle;
+	ApplyListViewPresentation();
+}
+
+void ULunarListView::SetScrollBarPresentationStyle(const FScrollBarStyle& NewStyle)
+{
+	ScrollBarPresentationStyle = NewStyle;
+	ApplyListViewPresentation();
+}
+
+void ULunarListView::ConfigureListViewPresentation(
+	const FTableRowStyle& NewRowStyle,
+	const FScrollBarStyle& NewScrollBarStyle)
+{
+	RowPresentationStyle = NewRowStyle;
+	ScrollBarPresentationStyle = NewScrollBarStyle;
+	ApplyListViewPresentation();
+}
+
+void ULunarListView::GetListViewPresentation(
+	FTableRowStyle& OutRowStyle,
+	FScrollBarStyle& OutScrollBarStyle) const
+{
+	OutRowStyle = RowPresentationStyle;
+	OutScrollBarStyle = ScrollBarPresentationStyle;
+}
+
+ULunarListViewEntry* ULunarListView::GetGeneratedEntryAt(const int32 ItemIndex) const
+{
+	for (ULunarListViewEntry* Entry : GeneratedEntries)
+	{
+		if (IsValid(Entry) && Entry->ItemIndex == ItemIndex)
+		{
+			return Entry;
+		}
+	}
+	return nullptr;
+}
+
+void ULunarListView::RefreshNavigationItems(const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	const FName PreviousItemId = ActiveItemId;
 	const int32 PreviousLogicalIndex = LastActiveItemIndex;
+	const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
 	const int32 ItemCount = Items.Num();
 
 	CachedItemIds.Init(NAME_None, ItemCount);
@@ -124,53 +515,24 @@ void ULunarListView::RefreshNavigationItems()
 	TMap<FString, FString> CurrentErrors;
 	for (int32 ItemIndex = 0; ItemIndex < ItemCount; ++ItemIndex)
 	{
-		UObject* Item = Items[ItemIndex].Get();
-		if (!IsValid(Item))
+		const FLunarListViewItemData& Item = Items[ItemIndex];
+		CachedItemIds[ItemIndex] = Item.ItemId;
+		CachedItemEnabled[ItemIndex] = Item.bEnabled;
+		CachedItemSelectableWhenDisabled[ItemIndex] = Item.bCanReceiveSelectionWhenDisabled;
+		CachedItemDisabledReasons[ItemIndex] = Item.DisabledReason;
+
+		if (Item.ItemId.IsNone())
 		{
-			const FString ErrorKey = FString::Printf(TEXT("InvalidObject:%d"), ItemIndex);
+			const FString ErrorKey = FString::Printf(TEXT("MissingId:%d"), ItemIndex);
 			CurrentErrors.Add(
 				ErrorKey,
 				FString::Printf(
-					TEXT("%s has a null or invalid ListView item at logical index %d."),
+					TEXT("%s Items[%d] has an empty ItemId."),
 					*GetPathName(),
 					ItemIndex));
 			continue;
 		}
-
-		if (!Item->GetClass()->ImplementsInterface(ULunarListViewItem::StaticClass()))
-		{
-			const FString ErrorKey = FString::Printf(TEXT("MissingInterface:%s:%d"), *Item->GetPathName(), ItemIndex);
-			CurrentErrors.Add(
-				ErrorKey,
-				FString::Printf(
-					TEXT("%s item '%s' at logical index %d does not implement ILunarListViewItem."),
-					*GetPathName(),
-					*Item->GetPathName(),
-					ItemIndex));
-			continue;
-		}
-
-		const FName ItemId = ILunarListViewItem::Execute_GetItemNavigationId(Item);
-		CachedItemIds[ItemIndex] = ItemId;
-		CachedItemEnabled[ItemIndex] = ILunarListViewItem::Execute_IsItemNavigationEnabled(Item);
-		CachedItemSelectableWhenDisabled[ItemIndex] =
-			ILunarListViewItem::Execute_CanSelectItemWhenDisabled(Item);
-		CachedItemDisabledReasons[ItemIndex] = ILunarListViewItem::Execute_GetItemDisabledReason(Item);
-
-		if (ItemId.IsNone())
-		{
-			const FString ErrorKey = FString::Printf(TEXT("MissingId:%s:%d"), *Item->GetPathName(), ItemIndex);
-			CurrentErrors.Add(
-				ErrorKey,
-				FString::Printf(
-					TEXT("%s item '%s' at logical index %d returned an empty ItemNavigationId."),
-					*GetPathName(),
-					*Item->GetPathName(),
-					ItemIndex));
-			continue;
-		}
-
-		ItemIdCounts.FindOrAdd(ItemId)++;
+		ItemIdCounts.FindOrAdd(Item.ItemId)++;
 	}
 
 	for (const TPair<FName, int32>& Pair : ItemIdCounts)
@@ -181,7 +543,7 @@ void ULunarListView::RefreshNavigationItems()
 			CurrentErrors.Add(
 				ErrorKey,
 				FString::Printf(
-					TEXT("%s contains %d ListView items with duplicate ItemNavigationId '%s'. All duplicate entries are excluded from logical navigation."),
+					TEXT("%s contains %d ListView items with duplicate ItemId '%s'. All duplicate entries are excluded from logical navigation."),
 					*GetPathName(),
 					Pair.Value,
 					*Pair.Key.ToString()));
@@ -203,48 +565,69 @@ void ULunarListView::RefreshNavigationItems()
 	ReportConfigurationErrors(CurrentErrors);
 	SynchronizeSlateItems();
 
+	if (SelectionMode == ELunarListViewSelectionMode::Multi)
+	{
+		SelectedItemIds = NormalizeSelectedItemIds(PreviousSelectedItemIds);
+		const int32* AnchorIndex = ItemIndexById.Find(SelectionAnchorItemId);
+		if (!AnchorIndex || !IsItemEligible(*AnchorIndex))
+		{
+			SelectionAnchorItemId = NAME_None;
+		}
+	}
+
 	const int32 RestoredItemIndex = FindRestoredItemIndex(PreviousItemId, PreviousLogicalIndex);
 	if (RestoredItemIndex != INDEX_NONE)
 	{
-		SetActiveItemInternal(RestoredItemIndex, true);
+		SetActiveItemInternal(RestoredItemIndex, bNotify);
 	}
 	else
 	{
-		ClearActiveItemInternal(true);
+		ClearActiveItemInternal(bNotify);
+	}
+
+	if (SelectionMode == ELunarListViewSelectionMode::Multi)
+	{
+		if (SelectionAnchorItemId.IsNone())
+		{
+			SelectionAnchorItemId = ActiveItemId;
+		}
+		SynchronizeSlateSelectionAndActiveItem();
+		RefreshGeneratedEntries();
+		if (bNotify && PreviousSelectedItemIds != SelectedItemIds)
+		{
+			BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+		}
 	}
 }
-
 void ULunarListView::SetExternalPresentationStyle(
 	const FTableRowStyle* RowStyle,
 	const FScrollBarStyle* ScrollBarStyle)
 {
-	bHasExternalRowStyle = RowStyle != nullptr;
-	bHasExternalScrollBarStyle = ScrollBarStyle != nullptr;
-	if (RowStyle)
-	{
-		ExternalRowStyle = *RowStyle;
-	}
-	if (ScrollBarStyle)
-	{
-		ExternalScrollBarStyle = *ScrollBarStyle;
-	}
-	bListViewStylePending = true;
-	ApplyListViewPresentationStyle();
+	RowPresentationStyle = RowStyle
+		? *RowStyle
+		: FCoreStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("TableView.Row"));
+	ScrollBarPresentationStyle = ScrollBarStyle
+		? *ScrollBarStyle
+		: FAppStyle::Get().GetWidgetStyle<FScrollBarStyle>(TEXT("ScrollBar"));
+	ApplyListViewPresentation();
 }
 
-void ULunarListView::SetExternalItemTextResolver(TFunction<FText(const UObject*)> ItemTextResolver)
+void ULunarListView::SetExternalFallbackPresentation(
+	const FTextBlockStyle* TextStyle,
+	const FMargin& EntryPadding)
 {
-	ExternalItemTextResolver = MoveTemp(ItemTextResolver);
+	FallbackTextStyle = TextStyle
+		? *TextStyle
+		: FCoreStyle::Get().GetWidgetStyle<FTextBlockStyle>(TEXT("NormalText"));
+	FallbackEntryPadding = EntryPadding;
 	if (ListViewWidget.IsValid())
 	{
 		ListViewWidget->RequestListRefresh();
 	}
-	RefreshLunarAccessibility();
 }
 
 TSharedPtr<SWidget> ULunarListView::RebuildLunarSpecializedPresentation()
 {
-	ApplyListViewPresentationStyle();
 	SAssignNew(ListViewWidget, SListView<UObject*>)
 		.ListItemsSource(&SlateItems)
 		.OnGenerateRow(SListView<UObject*>::FOnGenerateRow::CreateUObject(
@@ -253,40 +636,101 @@ TSharedPtr<SWidget> ULunarListView::RebuildLunarSpecializedPresentation()
 		.OnEntryInitialized(SListView<UObject*>::FOnEntryInitialized::CreateUObject(
 			this,
 			&ULunarListView::HandleEntryInitialized))
+		.OnRowReleased(SListView<UObject*>::FOnWidgetToBeRemoved::CreateUObject(
+			this,
+			&ULunarListView::HandleRowReleased))
 		.OnItemScrolledIntoView(SListView<UObject*>::FOnItemScrolledIntoView::CreateUObject(
 			this,
 			&ULunarListView::HandleItemScrolledIntoView))
-		.SelectionMode(ESelectionMode::Single)
+		.SelectionMode(ESelectionMode::Multi)
 		.ClearSelectionOnClick(false)
 		.Orientation(Orientation)
 		.ScrollIntoViewAlignment(EScrollIntoViewAlignment::IntoView)
-		.ScrollBarStyle(&DisplayedListViewStyle.ScrollBarStyle)
+		.ScrollBarStyle(&ScrollBarPresentationStyle)
 		.AllowOverscroll(EAllowOverscroll::No)
-		.ConsumeMouseWheel(EConsumeMouseWheel::Never)
+		.ConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible)
 		.HandleGamepadEvents(false)
 		.HandleDirectionalNavigation(false)
+		.EnableProximateEntryNavigation(true)
 		.IsFocusable(false)
-		.Visibility(EVisibility::HitTestInvisible);
+		.Visibility(EVisibility::SelfHitTestInvisible);
 
 	ListViewWidget->SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
-	SynchronizeSlateActiveItem();
+	SynchronizeSlateSelectionAndActiveItem();
 	return ListViewWidget;
 }
 
 void ULunarListView::ReleaseSlateResources(const bool bReleaseChildren)
 {
+	GeneratedEntryByRow.Reset();
+	GeneratedEntries.Reset();
 	ListViewWidget.Reset();
 	Super::ReleaseSlateResources(bReleaseChildren);
 }
 
+#if WITH_EDITOR
+void ULunarListView::RefreshDesignerPreviewItems()
+{
+#if WITH_EDITORONLY_DATA
+	if (!IsDesignTime())
+	{
+		return;
+	}
+
+	if (!bUsingDesignerPreviewItems)
+	{
+		DesignerPreviewItems = Items;
+	}
+
+	if (NumDesignerPreviewEntries <= 0)
+	{
+		Items = DesignerPreviewItems;
+		DesignerPreviewItems.Reset();
+		bUsingDesignerPreviewItems = false;
+		return;
+	}
+
+	bUsingDesignerPreviewItems = true;
+	Items.Reset(NumDesignerPreviewEntries);
+	for (int32 ItemIndex = 0; ItemIndex < NumDesignerPreviewEntries; ++ItemIndex)
+	{
+		FLunarListViewItemData& PreviewItem = Items.AddDefaulted_GetRef();
+		PreviewItem.ItemId = FName(*FString::Printf(TEXT("DesignerPreview_%02d"), ItemIndex + 1));
+		PreviewItem.DisplayText = FText::AsCultureInvariant(
+			FString::Printf(TEXT("Preview Item %d"), ItemIndex + 1));
+	}
+#endif
+}
+#endif
+
 void ULunarListView::SynchronizeProperties()
 {
-	RefreshNavigationItems();
+#if WITH_EDITOR
+	RefreshDesignerPreviewItems();
+	if (IsDesignTime())
+	{
+		Super::SynchronizeProperties();
+		return;
+	}
+#endif
+	RefreshNavigationItems(ELunarChangeNotificationPolicy::Silent);
 	Super::SynchronizeProperties();
+}
+
+void ULunarListView::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+#if WITH_EDITOR
+	if (IsDesignTime())
+	{
+		RefreshNavigationItems(ELunarChangeNotificationPolicy::Silent);
+	}
+#endif
 }
 
 void ULunarListView::NativeDestruct()
 {
+	SetHoveredItemIndex(INDEX_NONE);
 	ResetPointerItemPress();
 	if (ListViewWidget.IsValid())
 	{
@@ -295,24 +739,64 @@ void ULunarListView::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-FReply ULunarListView::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+FReply ULunarListView::NativeOnMouseMove(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
 {
+	if (bCanInteractWithPointer && !InMouseEvent.IsTouchEvent())
+	{
+		SetHoveredItemIndex(FindLogicalIndexForItem(
+			FindGeneratedItemAtScreenPosition(InMouseEvent.GetScreenSpacePosition())));
+	}
+	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+}
+
+void ULunarListView::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	SetHoveredItemIndex(INDEX_NONE);
+	Super::NativeOnMouseLeave(InMouseEvent);
+}
+
+FReply ULunarListView::NativeOnMouseButtonDown(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	bActivatePointerItemOnRelease = false;
 	if (bCanInteractWithPointer && InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		bTrackingPointerItemPress = true;
+		bPointerItemPressIsTouch = false;
+		bPointerRangeSelectionModifier = InMouseEvent.IsShiftDown();
+		bPointerAdditiveSelectionModifier = InMouseEvent.IsControlDown();
 		PointerPressedItem = FindGeneratedItemAtScreenPosition(InMouseEvent.GetScreenSpacePosition());
+		PressedItemIndex = FindLogicalIndexForItem(PointerPressedItem.Get());
 		bPointerPressedOverEligibleItem = IsPointerItemEligible(PointerPressedItem.Get());
-		if (bPointerPressedOverEligibleItem)
-		{
-			const int32 ItemIndex = FindLogicalIndexForItem(PointerPressedItem.Get());
-			SetActiveItemInternal(ItemIndex, true);
-		}
+		RefreshGeneratedEntries();
 	}
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
-FReply ULunarListView::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+FReply ULunarListView::NativeOnMouseButtonDoubleClick(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
 {
+	FReply Reply = NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	if (SelectionMode == ELunarListViewSelectionMode::Multi
+		&& InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton
+		&& bTrackingPointerItemPress
+		&& !bPointerRangeSelectionModifier
+		&& !bPointerAdditiveSelectionModifier)
+	{
+		bActivatePointerItemOnRelease = true;
+	}
+	return Reply;
+}
+
+FReply ULunarListView::NativeOnMouseButtonUp(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	bool bShouldActivate = false;
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bTrackingPointerItemPress)
 	{
 		UObject* ReleasedItem = FindGeneratedItemAtScreenPosition(InMouseEvent.GetScreenSpacePosition());
@@ -326,6 +810,32 @@ FReply ULunarListView::NativeOnMouseButtonUp(const FGeometry& InGeometry, const 
 			NativeOnLunarRejected();
 			return FReply::Handled().ReleaseMouseCapture();
 		}
+
+		const int32 ReleasedItemIndex = FindLogicalIndexForItem(ReleasedItem);
+		const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
+		if (SelectionMode == ELunarListViewSelectionMode::Multi)
+		{
+			ApplySelectionOperation(
+				ReleasedItemIndex,
+				ResolveSelectionOperation(
+					bPointerRangeSelectionModifier,
+					bPointerAdditiveSelectionModifier),
+				false);
+			bShouldActivate = bActivatePointerItemOnRelease;
+		}
+		SetActiveItemInternal(ReleasedItemIndex, true);
+		if (SelectionMode == ELunarListViewSelectionMode::Multi
+			&& PreviousSelectedItemIds != SelectedItemIds)
+		{
+			BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+		}
+	}
+
+	if (SelectionMode == ELunarListViewSelectionMode::Multi && !bShouldActivate)
+	{
+		CancelPointerPress();
+		ResetPointerItemPress();
+		return FReply::Handled().ReleaseMouseCapture();
 	}
 
 	ResetPointerItemPress();
@@ -338,45 +848,47 @@ void ULunarListView::NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLo
 	Super::NativeOnMouseCaptureLost(CaptureLostEvent);
 }
 
-FReply ULunarListView::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+FReply ULunarListView::NativeOnTouchStarted(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InGestureEvent)
 {
-	if (bCanInteractWithPointer && ListViewWidget.IsValid() && InMouseEvent.GetWheelDelta() != 0.0f)
-	{
-		const float PreviousOffset = ListViewWidget->GetScrollOffset();
-		ListViewWidget->AddScrollOffset(-InMouseEvent.GetWheelDelta() * 3.0f, true);
-		if (ListViewWidget->GetScrollOffset() != PreviousOffset)
-		{
-			return FReply::Handled();
-		}
-	}
-	return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
-}
-
-FReply ULunarListView::NativeOnTouchStarted(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
-{
-	if (bCanInteractWithPointer && InGestureEvent.IsTouchEvent() && InGestureEvent.GetPointerIndex() == 0)
+	if (bAllowTouchInput
+		&& InGestureEvent.IsTouchEvent()
+		&& InGestureEvent.GetPointerIndex() == 0)
 	{
 		bTrackingPointerItemPress = true;
 		bTouchItemTapEligible = true;
+		bPointerItemPressIsTouch = true;
+		bPointerRangeSelectionModifier = false;
+		bPointerAdditiveSelectionModifier = false;
+		bActivatePointerItemOnRelease = false;
 		PointerItemPressScreenPosition = InGestureEvent.GetScreenSpacePosition();
 		PointerPressedItem = FindGeneratedItemAtScreenPosition(InGestureEvent.GetScreenSpacePosition());
+		PressedItemIndex = FindLogicalIndexForItem(PointerPressedItem.Get());
 		bPointerPressedOverEligibleItem = IsPointerItemEligible(PointerPressedItem.Get());
+		RefreshGeneratedEntries();
 	}
 	return Super::NativeOnTouchStarted(InGeometry, InGestureEvent);
 }
 
-FReply ULunarListView::NativeOnTouchMoved(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
+FReply ULunarListView::NativeOnTouchMoved(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InGestureEvent)
 {
-	if (bTrackingPointerItemPress && InGestureEvent.GetPointerIndex() == 0
+	if (bTrackingPointerItemPress
+		&& InGestureEvent.GetPointerIndex() == 0
 		&& FVector2D::Distance(PointerItemPressScreenPosition, InGestureEvent.GetScreenSpacePosition())
 			> FSlateApplication::Get().GetDragTriggerDistance())
 	{
 		bTouchItemTapEligible = false;
+		RefreshGeneratedEntries();
 	}
 	return Super::NativeOnTouchMoved(InGeometry, InGestureEvent);
 }
 
-FReply ULunarListView::NativeOnTouchEnded(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
+FReply ULunarListView::NativeOnTouchEnded(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InGestureEvent)
 {
 	if (InGestureEvent.GetPointerIndex() == 0 && bTrackingPointerItemPress)
 	{
@@ -393,13 +905,28 @@ FReply ULunarListView::NativeOnTouchEnded(const FGeometry& InGeometry, const FPo
 			return FReply::Handled().ReleaseMouseCapture();
 		}
 
-		SetActiveItemInternal(FindLogicalIndexForItem(ReleasedItem), true);
+		const int32 ReleasedItemIndex = FindLogicalIndexForItem(ReleasedItem);
+		const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
+		if (SelectionMode == ELunarListViewSelectionMode::Multi)
+		{
+			ApplySelectionOperation(ReleasedItemIndex, ESelectionOperation::Replace, false);
+		}
+		SetActiveItemInternal(ReleasedItemIndex, true);
+		if (SelectionMode == ELunarListViewSelectionMode::Multi)
+		{
+			if (PreviousSelectedItemIds != SelectedItemIds)
+			{
+				BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+			}
+			CancelPointerPress();
+			ResetPointerItemPress();
+			return FReply::Handled().ReleaseMouseCapture();
+		}
 	}
 
 	ResetPointerItemPress();
 	return Super::NativeOnTouchEnded(InGeometry, InGestureEvent);
 }
-
 bool ULunarListView::NativeCanHandleLunarAction(const FLunarUIActionContext& ActionContext) const
 {
 	if (!IsLunarSelected())
@@ -408,6 +935,17 @@ bool ULunarListView::NativeCanHandleLunarAction(const FLunarUIActionContext& Act
 	}
 
 	if (ActionContext.ActionTag == LunarGameplayTags::UI_Action_Accept.GetTag())
+	{
+		return true;
+	}
+	if (SelectionMode == ELunarListViewSelectionMode::Multi
+		&& ActionContext.ActionTag == LunarGameplayTags::UI_Action_Selection_Toggle.GetTag())
+	{
+		return true;
+	}
+	if (SelectionMode == ELunarListViewSelectionMode::Multi
+		&& ActionContext.bAdditiveSelectionModifier
+		&& ActionContext.Key == EKeys::A)
 	{
 		return true;
 	}
@@ -422,18 +960,61 @@ bool ULunarListView::NativeCanHandleLunarAction(const FLunarUIActionContext& Act
 	return Super::NativeCanHandleLunarAction(ActionContext);
 }
 
-ELunarUIActionResult ULunarListView::NativeHandleLunarAction(const FLunarUIActionContext& ActionContext)
+ELunarUIActionResult ULunarListView::NativeHandleLunarAction(
+	const FLunarUIActionContext& ActionContext)
 {
+	if (SelectionMode == ELunarListViewSelectionMode::Multi
+		&& ActionContext.ActionTag == LunarGameplayTags::UI_Action_Selection_Toggle.GetTag())
+	{
+		const int32 ActiveIndex = GetActiveItemIndex();
+		if (!IsItemEligible(ActiveIndex))
+		{
+			return ELunarUIActionResult::Rejected;
+		}
+		if (ActionContext.InputEvent == IE_Released)
+		{
+			ApplySelectionOperation(ActiveIndex, ESelectionOperation::Toggle, true);
+		}
+		return ELunarUIActionResult::Handled;
+	}
+
 	if (ActionContext.ActionTag == LunarGameplayTags::UI_Action_Accept.GetTag())
 	{
+		const bool bToggleWithKeyboard = SelectionMode == ELunarListViewSelectionMode::Multi
+			&& ActionContext.bAdditiveSelectionModifier
+			&& ActionContext.Key == EKeys::SpaceBar;
+		if (bToggleWithKeyboard)
+		{
+			const int32 ActiveIndex = GetActiveItemIndex();
+			if (!IsItemEligible(ActiveIndex))
+			{
+				return ELunarUIActionResult::Rejected;
+			}
+			if (ActionContext.InputEvent == IE_Released)
+			{
+				ApplySelectionOperation(ActiveIndex, ESelectionOperation::Toggle, true);
+			}
+			return ELunarUIActionResult::Handled;
+		}
+
 		if (!NativeCanActivateLunarWidget())
 		{
 			return ELunarUIActionResult::Rejected;
 		}
-
 		if (ActionContext.InputEvent == IE_Released && IsLunarSelected())
 		{
 			ActivateLunarWidget();
+		}
+		return ELunarUIActionResult::Handled;
+	}
+
+	if (SelectionMode == ELunarListViewSelectionMode::Multi
+		&& ActionContext.bAdditiveSelectionModifier
+		&& ActionContext.Key == EKeys::A)
+	{
+		if (ActionContext.InputEvent == IE_Pressed)
+		{
+			SelectAllItems(ELunarChangeNotificationPolicy::Notify);
 		}
 		return ELunarUIActionResult::Handled;
 	}
@@ -450,104 +1031,240 @@ ELunarUIActionResult ULunarListView::NativeHandleLunarAction(const FLunarUIActio
 		{
 			return ELunarUIActionResult::Handled;
 		}
-		return MoveActiveItem(Direction)
+		return MoveActiveItem(
+			Direction,
+			ResolveSelectionOperation(
+				ActionContext.bRangeSelectionModifier,
+				ActionContext.bAdditiveSelectionModifier))
 			? ELunarUIActionResult::Handled
 			: ELunarUIActionResult::Rejected;
 	}
 
 	return Super::NativeHandleLunarAction(ActionContext);
 }
-
 bool ULunarListView::NativeCanActivateLunarWidget() const
 {
-	const int32* ItemIndex = ItemIndexById.Find(ActiveItemId);
-	return Super::NativeCanActivateLunarWidget()
-		&& ItemIndex
-		&& IsItemEnabled(*ItemIndex);
+	const int32 ItemIndex = GetActiveItemIndex();
+	return Super::NativeCanActivateLunarWidget() && IsItemEnabled(ItemIndex);
+}
+
+void ULunarListView::NativeOnLunarActivated()
+{
+	Super::NativeOnLunarActivated();
+	const int32 ItemIndex = GetActiveItemIndex();
+	if (!Items.IsValidIndex(ItemIndex))
+	{
+		return;
+	}
+
+	const FLunarListViewItemData ItemData = Items[ItemIndex];
+	BP_OnLunarItemActivated(ItemIndex, ItemData);
+	OnItemActivated.Broadcast(this, ItemIndex, ItemData);
 }
 
 void ULunarListView::NativeOnLunarRejected()
 {
 	Super::NativeOnLunarRejected();
-	const int32* ItemIndex = ItemIndexById.Find(ActiveItemId);
-	if (ItemIndex && !IsItemEnabled(*ItemIndex)
-		&& CachedItemDisabledReasons.IsValidIndex(*ItemIndex)
-		&& !CachedItemDisabledReasons[*ItemIndex].IsEmpty())
+	const int32 ItemIndex = GetActiveItemIndex();
+	if (CachedItemDisabledReasons.IsValidIndex(ItemIndex)
+		&& !IsItemEnabled(ItemIndex)
+		&& !CachedItemDisabledReasons[ItemIndex].IsEmpty())
 	{
-		NotifyLunarAccessibleValueChanged(CachedItemDisabledReasons[*ItemIndex]);
+		NotifyLunarAccessibleValueChanged(CachedItemDisabledReasons[ItemIndex]);
 	}
+}
+
+void ULunarListView::NativeOnLunarVisualStateChanged(
+	const FLunarUIVisualState& PreviousState,
+	const FLunarUIVisualState& NewState,
+	const bool bIsDesignerPreview)
+{
+	LastOwnerVisualState = NewState;
+	bLastOwnerVisualStateIsDesignerPreview = bIsDesignerPreview;
+	Super::NativeOnLunarVisualStateChanged(PreviousState, NewState, bIsDesignerPreview);
+	RefreshGeneratedEntries();
 }
 
 FText ULunarListView::NativeGetLunarAccessibleValueText() const
 {
-	const int32* ItemIndex = ItemIndexById.Find(ActiveItemId);
-	if (!ItemIndex || !Items.IsValidIndex(*ItemIndex))
+	const int32 ItemIndex = GetActiveItemIndex();
+	if (!Items.IsValidIndex(ItemIndex))
 	{
 		return LOCTEXT("NoActiveItem", "No active item");
 	}
 
-	const FText ItemDisplayText = ResolveItemDisplayText(Items[*ItemIndex].Get());
-	const FText ItemText = ItemDisplayText.IsEmpty()
-		? LOCTEXT("ActiveItemWithoutLabel", "Active item")
-		: FText::Format(
-			LOCTEXT("ActiveItem", "Active item {0}"),
-			ItemDisplayText);
-	if (!IsItemEnabled(*ItemIndex) && CachedItemDisabledReasons.IsValidIndex(*ItemIndex)
-		&& !CachedItemDisabledReasons[*ItemIndex].IsEmpty())
+	const FLunarListViewItemData& Item = Items[ItemIndex];
+	const FText ItemText = Item.DisplayText.IsEmpty()
+		? FText::FromName(Item.ItemId)
+		: Item.DisplayText;
+	if (!Item.bEnabled && !Item.DisabledReason.IsEmpty())
 	{
 		return FText::Format(
 			LOCTEXT("DisabledActiveItem", "{0}. Unavailable: {1}"),
 			ItemText,
-			CachedItemDisabledReasons[*ItemIndex]);
+			Item.DisabledReason);
 	}
 	return ItemText;
 }
 
-bool ULunarListView::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	FLunarListViewStylePatch ResolvedStyle;
-	const bool bResolved = LunarStyleResolver::ResolveListViewStyle(
-		StyleAsset,
-		GetLunarVisualState(),
-		StyleOverrides,
-		ResolvedStyle,
-		&OutError);
-	if (bResolved)
-	{
-		ULunarListView* MutableThis = const_cast<ULunarListView*>(this);
-		MutableThis->ResolvedListViewStyle = ResolvedStyle;
-		MutableThis->bListViewStylePending = true;
-		OutStyle = ResolvedStyle.Common;
-	}
-	return bResolved;
-}
-
-void ULunarListView::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	Super::ApplyResolvedCommonStyle(ResolvedStyle);
-	if (bListViewStylePending)
-	{
-		ApplyListViewPresentationStyle();
-	}
-}
-
-bool ULunarListView::IsDirectionAlongOrientation(const ELunarNavigationDirection Direction) const
+bool ULunarListView::IsDirectionAlongOrientation(
+	const ELunarNavigationDirection Direction) const
 {
 	return Orientation == Orient_Vertical
 		? Direction == ELunarNavigationDirection::Up || Direction == ELunarNavigationDirection::Down
 		: Direction == ELunarNavigationDirection::Left || Direction == ELunarNavigationDirection::Right;
 }
 
-bool ULunarListView::MoveActiveItem(const ELunarNavigationDirection Direction)
+ULunarListView::ESelectionOperation ULunarListView::ResolveSelectionOperation(
+	const bool bRangeModifier,
+	const bool bAdditiveModifier) const
+{
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		return ESelectionOperation::Replace;
+	}
+	if (bRangeModifier)
+	{
+		return bAdditiveModifier ? ESelectionOperation::RangeAdd : ESelectionOperation::RangeReplace;
+	}
+	return bAdditiveModifier ? ESelectionOperation::ActiveOnly : ESelectionOperation::Replace;
+}
+
+TArray<FName> ULunarListView::NormalizeSelectedItemIds(const TArray<FName>& CandidateIds) const
+{
+	TSet<FName> CandidateSet;
+	CandidateSet.Reserve(CandidateIds.Num());
+	for (const FName CandidateId : CandidateIds)
+	{
+		if (!CandidateId.IsNone())
+		{
+			CandidateSet.Add(CandidateId);
+		}
+	}
+
+	TArray<FName> Result;
+	for (int32 ItemIndex = 0; ItemIndex < Items.Num(); ++ItemIndex)
+	{
+		if (IsItemEligible(ItemIndex) && CandidateSet.Contains(CachedItemIds[ItemIndex]))
+		{
+			Result.Add(CachedItemIds[ItemIndex]);
+			if (SelectionMode == ELunarListViewSelectionMode::Single)
+			{
+				break;
+			}
+		}
+	}
+	return Result;
+}
+
+void ULunarListView::ApplySelectedItemIdsInternal(
+	const TArray<FName>& NewSelectedItemIds,
+	const bool bBroadcastChange,
+	const bool bUpdateAnchor)
+{
+	const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
+	SelectedItemIds = NormalizeSelectedItemIds(NewSelectedItemIds);
+	if (bUpdateAnchor)
+	{
+		SelectionAnchorItemId = SelectedItemIds.IsEmpty() ? NAME_None : SelectedItemIds.Last();
+	}
+
+	SynchronizeSlateSelectionAndActiveItem();
+	RefreshGeneratedEntries();
+	if (bBroadcastChange && PreviousSelectedItemIds != SelectedItemIds)
+	{
+		BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+	}
+}
+
+TArray<FName> ULunarListView::BuildSelectionRange(const int32 TargetItemIndex) const
+{
+	TArray<FName> Result;
+	if (!IsItemEligible(TargetItemIndex))
+	{
+		return Result;
+	}
+
+	const int32* StoredAnchorIndex = ItemIndexById.Find(SelectionAnchorItemId);
+	const int32 AnchorIndex = StoredAnchorIndex && IsItemEligible(*StoredAnchorIndex)
+		? *StoredAnchorIndex
+		: TargetItemIndex;
+	const int32 FirstIndex = FMath::Min(AnchorIndex, TargetItemIndex);
+	const int32 LastIndex = FMath::Max(AnchorIndex, TargetItemIndex);
+	for (int32 ItemIndex = FirstIndex; ItemIndex <= LastIndex; ++ItemIndex)
+	{
+		if (IsItemEligible(ItemIndex))
+		{
+			Result.Add(CachedItemIds[ItemIndex]);
+		}
+	}
+	return Result;
+}
+
+void ULunarListView::ApplySelectionOperation(
+	const int32 ItemIndex,
+	const ESelectionOperation Operation,
+	const bool bBroadcastChange)
+{
+	if (!IsItemEligible(ItemIndex) || SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		return;
+	}
+
+	const FName TargetId = CachedItemIds[ItemIndex];
+	TArray<FName> NewSelectedItemIds = SelectedItemIds;
+	switch (Operation)
+	{
+	case ESelectionOperation::Replace:
+		NewSelectedItemIds = { TargetId };
+		SelectionAnchorItemId = TargetId;
+		break;
+	case ESelectionOperation::Toggle:
+		if (NewSelectedItemIds.Contains(TargetId))
+		{
+			NewSelectedItemIds.Remove(TargetId);
+		}
+		else
+		{
+			NewSelectedItemIds.Add(TargetId);
+		}
+		SelectionAnchorItemId = TargetId;
+		break;
+	case ESelectionOperation::RangeReplace:
+		NewSelectedItemIds = BuildSelectionRange(ItemIndex);
+		break;
+	case ESelectionOperation::RangeAdd:
+		for (const FName RangeId : BuildSelectionRange(ItemIndex))
+		{
+			NewSelectedItemIds.AddUnique(RangeId);
+		}
+		break;
+	case ESelectionOperation::ActiveOnly:
+		SynchronizeSlateSelectionAndActiveItem();
+		RefreshGeneratedEntries();
+		return;
+	default:
+		return;
+	}
+
+	ApplySelectedItemIdsInternal(NewSelectedItemIds, bBroadcastChange, false);
+}
+
+void ULunarListView::BroadcastSelectedItemsChanged(
+	const TArray<FName>& PreviousSelectedItemIds)
+{
+	BP_OnLunarSelectedItemsChanged(PreviousSelectedItemIds, SelectedItemIds);
+	OnSelectedItemsChanged.Broadcast(this, PreviousSelectedItemIds, SelectedItemIds);
+}
+
+bool ULunarListView::MoveActiveItem(
+	const ELunarNavigationDirection Direction,
+	const ESelectionOperation SelectionOperation)
 {
 	const bool bForward = Direction == ELunarNavigationDirection::Down
 		|| Direction == ELunarNavigationDirection::Right;
-	int32 StartingIndex = INDEX_NONE;
-	if (const int32* ActiveIndex = ItemIndexById.Find(ActiveItemId))
-	{
-		StartingIndex = *ActiveIndex;
-	}
-	else
+	int32 StartingIndex = GetActiveItemIndex();
+	if (StartingIndex == INDEX_NONE)
 	{
 		StartingIndex = bForward ? -1 : Items.Num();
 	}
@@ -557,13 +1274,63 @@ bool ULunarListView::MoveActiveItem(const ELunarNavigationDirection Direction)
 	{
 		if (IsItemEligible(ItemIndex))
 		{
+			const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
+			if (SelectionMode == ELunarListViewSelectionMode::Multi)
+			{
+				ApplySelectionOperation(ItemIndex, SelectionOperation, false);
+			}
 			SetActiveItemInternal(ItemIndex, true);
+			if (SelectionMode == ELunarListViewSelectionMode::Multi
+				&& PreviousSelectedItemIds != SelectedItemIds)
+			{
+				BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+			}
 			return true;
 		}
 	}
+	if (bWrapNavigation && !Items.IsEmpty())
+	{
+		const int32 WrappedStart = bForward ? 0 : Items.Num() - 1;
+		for (int32 ItemIndex = WrappedStart;
+			Items.IsValidIndex(ItemIndex) && ItemIndex != StartingIndex;
+			ItemIndex += Step)
+		{
+			if (IsItemEligible(ItemIndex))
+			{
+				const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
+				if (SelectionMode == ELunarListViewSelectionMode::Multi)
+				{
+					ApplySelectionOperation(ItemIndex, SelectionOperation, false);
+				}
+				SetActiveItemInternal(ItemIndex, true);
+				if (ListViewWidget.IsValid())
+				{
+					// A wrapped boundary must land on the exact opposite edge. The
+					// normal item-index reveal can stop early for virtualized rows of
+					// varying width, especially in horizontal lists.
+					ListViewWidget->CancelScrollIntoView();
+					PendingRowGenerationItemId = NAME_None;
+					if (bForward)
+					{
+						ListViewWidget->ScrollToTop();
+					}
+					else
+					{
+						ListViewWidget->ScrollToBottom();
+					}
+				}
+				if (SelectionMode == ELunarListViewSelectionMode::Multi
+					&& PreviousSelectedItemIds != SelectedItemIds)
+				{
+					BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
+				}
+				return true;
+			}
+		}
+		return IsItemEligible(StartingIndex);
+	}
 	return false;
 }
-
 bool ULunarListView::IsItemEligible(const int32 ItemIndex) const
 {
 	return CachedItemConfigurationValid.IsValidIndex(ItemIndex)
@@ -578,19 +1345,28 @@ bool ULunarListView::IsItemEnabled(const int32 ItemIndex) const
 		&& CachedItemEnabled[ItemIndex];
 }
 
+bool ULunarListView::IsItemSelectedByIndex(const int32 ItemIndex) const
+{
+	return CachedItemIds.IsValidIndex(ItemIndex)
+		&& SelectedItemIds.Contains(CachedItemIds[ItemIndex]);
+}
+
 int32 ULunarListView::FindLogicalIndexForItem(const UObject* Item) const
 {
-	for (int32 ItemIndex = 0; ItemIndex < Items.Num(); ++ItemIndex)
+	if (!Item)
 	{
-		if (Items[ItemIndex].Get() == Item)
-		{
-			return ItemIndex;
-		}
+		return INDEX_NONE;
+	}
+	if (const int32* ItemIndex = ItemIndexByObject.Find(TObjectKey<UObject>(const_cast<UObject*>(Item))))
+	{
+		return *ItemIndex;
 	}
 	return INDEX_NONE;
 }
 
-int32 ULunarListView::FindRestoredItemIndex(const FName PreviousItemId, const int32 PreviousLogicalIndex) const
+int32 ULunarListView::FindRestoredItemIndex(
+	const FName PreviousItemId,
+	const int32 PreviousLogicalIndex) const
 {
 	if (const int32* ExistingIndex = ItemIndexById.Find(PreviousItemId))
 	{
@@ -627,21 +1403,102 @@ int32 ULunarListView::FindRestoredItemIndex(const FName PreviousItemId, const in
 
 FText ULunarListView::ResolveItemDisplayText(const UObject* Item) const
 {
-	if (ExternalItemTextResolver)
-	{
-		return ExternalItemTextResolver(Item);
-	}
-
 	const int32 ItemIndex = FindLogicalIndexForItem(Item);
-	const FName ItemId = CachedItemIds.IsValidIndex(ItemIndex)
-		? CachedItemIds[ItemIndex]
-		: NAME_None;
-	return ItemId.IsNone()
-		? FText::FromString(GetNameSafe(Item))
-		: FText::FromName(ItemId);
+	if (!Items.IsValidIndex(ItemIndex))
+	{
+		return FText::GetEmpty();
+	}
+	return Items[ItemIndex].DisplayText.IsEmpty()
+		? FText::FromName(Items[ItemIndex].ItemId)
+		: Items[ItemIndex].DisplayText;
 }
 
-void ULunarListView::SetActiveItemInternal(const int32 ItemIndex, const bool bBroadcastChange)
+FLunarUIVisualState ULunarListView::ResolveItemVisualState(const int32 ItemIndex) const
+{
+	FLunarUIVisualState Result = LastOwnerVisualState;
+	const bool bActive = ItemIndex == GetActiveItemIndex();
+	const bool bOwnerDisabled =
+		LastOwnerVisualState.ValueStateTag == LunarGameplayTags::UI_State_Value_Disabled.GetTag();
+	Result.ValueStateTag = bOwnerDisabled || !IsItemEnabled(ItemIndex)
+		? LunarGameplayTags::UI_State_Value_Disabled.GetTag()
+		: LunarGameplayTags::UI_State_Value_Normal.GetTag();
+
+	const ELunarUIInteractionState OwnerInteraction = LastOwnerVisualState.InteractionState;
+	const bool bOwnerPointerState = OwnerInteraction == ELunarUIInteractionState::PointerNormal
+		|| OwnerInteraction == ELunarUIInteractionState::PointerHovered
+		|| OwnerInteraction == ELunarUIInteractionState::PointerPressed;
+	const bool bLocalPointerInteraction = !bLastOwnerVisualStateIsDesignerPreview
+		&& (HoveredItemIndex != INDEX_NONE || PressedItemIndex != INDEX_NONE);
+	if (bOwnerPointerState || bLocalPointerInteraction)
+	{
+		const int32 EffectiveHoveredIndex = bLastOwnerVisualStateIsDesignerPreview
+			? GetActiveItemIndex()
+			: HoveredItemIndex;
+		const int32 EffectivePressedIndex = bLastOwnerVisualStateIsDesignerPreview
+			? GetActiveItemIndex()
+			: (bPointerItemPressIsTouch || HoveredItemIndex == PressedItemIndex
+				? PressedItemIndex
+				: INDEX_NONE);
+		const bool bPointerPressActive = OwnerInteraction == ELunarUIInteractionState::PointerPressed
+			|| PressedItemIndex != INDEX_NONE;
+		Result.InteractionState = bPointerPressActive && ItemIndex == EffectivePressedIndex
+			? ELunarUIInteractionState::PointerPressed
+			: (ItemIndex == EffectiveHoveredIndex
+				? ELunarUIInteractionState::PointerHovered
+				: ELunarUIInteractionState::PointerNormal);
+		return Result;
+	}
+
+	if (OwnerInteraction == ELunarUIInteractionState::NavigationPressed)
+	{
+		Result.InteractionState = bActive
+			? ELunarUIInteractionState::NavigationPressed
+			: ELunarUIInteractionState::NavigationNormal;
+	}
+	else if (OwnerInteraction == ELunarUIInteractionState::NavigationSelected && bActive)
+	{
+		Result.InteractionState = ELunarUIInteractionState::NavigationSelected;
+	}
+	else
+	{
+		Result.InteractionState = ELunarUIInteractionState::NavigationNormal;
+	}
+	return Result;
+}
+
+void ULunarListView::RefreshGeneratedEntries()
+{
+	for (ULunarListViewEntry* Entry : GeneratedEntries)
+	{
+		if (!IsValid(Entry) || !Items.IsValidIndex(Entry->ItemIndex))
+		{
+			continue;
+		}
+		const int32 ItemIndex = Entry->ItemIndex;
+		Entry->ApplyDataFromListView(ItemIndex, Items[ItemIndex]);
+		Entry->ApplyVisualStateFromListView(
+			ResolveItemVisualState(ItemIndex),
+			ItemIndex == GetActiveItemIndex(),
+			IsItemSelectedByIndex(ItemIndex));
+	}
+}
+
+void ULunarListView::SetHoveredItemIndex(const int32 NewHoveredItemIndex)
+{
+	const int32 NormalizedIndex = Items.IsValidIndex(NewHoveredItemIndex)
+		? NewHoveredItemIndex
+		: INDEX_NONE;
+	if (HoveredItemIndex == NormalizedIndex)
+	{
+		return;
+	}
+	HoveredItemIndex = NormalizedIndex;
+	RefreshGeneratedEntries();
+}
+
+void ULunarListView::SetActiveItemInternal(
+	const int32 ItemIndex,
+	const bool bBroadcastChange)
 {
 	if (!IsItemEligible(ItemIndex))
 	{
@@ -649,73 +1506,95 @@ void ULunarListView::SetActiveItemInternal(const int32 ItemIndex, const bool bBr
 	}
 
 	const FName PreviousItemId = ActiveItemId;
+	const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
 	ActiveItemId = CachedItemIds[ItemIndex];
 	LastActiveItemIndex = ItemIndex;
 	PendingRowGenerationItemId = ActiveItemId;
-	SynchronizeSlateActiveItem();
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
+	{
+		SelectedItemIds = { ActiveItemId };
+		SelectionAnchorItemId = ActiveItemId;
+	}
+	else if (SelectionAnchorItemId.IsNone())
+	{
+		SelectionAnchorItemId = ActiveItemId;
+	}
+	SynchronizeSlateSelectionAndActiveItem();
+	RefreshGeneratedEntries();
 	RefreshLunarAccessibility();
 
-	if (PreviousItemId != ActiveItemId)
+	if (PreviousItemId != ActiveItemId && bBroadcastChange)
 	{
+		const FLunarListViewItemData ItemData = Items[ItemIndex];
 		NotifyLunarAccessibleValueChanged(NativeGetLunarAccessibleValueText());
-		if (bBroadcastChange)
-		{
-			OnActiveItemChanged.Broadcast(PreviousItemId, ActiveItemId);
-		}
+		BP_OnLunarActiveItemChanged(PreviousItemId, ActiveItemId, ItemIndex, ItemData);
+		OnActiveItemChanged.Broadcast(this, PreviousItemId, ActiveItemId);
+	}
+	if (bBroadcastChange && PreviousSelectedItemIds != SelectedItemIds)
+	{
+		BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
 	}
 }
 
 void ULunarListView::ClearActiveItemInternal(const bool bBroadcastChange)
 {
 	const FName PreviousItemId = ActiveItemId;
+	const TArray<FName> PreviousSelectedItemIds = SelectedItemIds;
 	ActiveItemId = NAME_None;
 	PendingRowGenerationItemId = NAME_None;
-	if (ListViewWidget.IsValid())
+	if (SelectionMode == ELunarListViewSelectionMode::Single)
 	{
-		ListViewWidget->CancelScrollIntoView();
-		ListViewWidget->ClearSelection();
+		SelectedItemIds.Reset();
+		SelectionAnchorItemId = NAME_None;
 	}
+	SynchronizeSlateSelectionAndActiveItem();
+	RefreshGeneratedEntries();
 	RefreshLunarAccessibility();
 
-	if (!PreviousItemId.IsNone())
+	if (!PreviousItemId.IsNone() && bBroadcastChange)
 	{
 		NotifyLunarAccessibleValueChanged(NativeGetLunarAccessibleValueText());
-		if (bBroadcastChange)
-		{
-			OnActiveItemChanged.Broadcast(PreviousItemId, NAME_None);
-		}
+		BP_OnLunarActiveItemChanged(
+			PreviousItemId,
+			NAME_None,
+			INDEX_NONE,
+			FLunarListViewItemData());
+		OnActiveItemChanged.Broadcast(this, PreviousItemId, NAME_None);
+	}
+	if (bBroadcastChange && PreviousSelectedItemIds != SelectedItemIds)
+	{
+		BroadcastSelectedItemsChanged(PreviousSelectedItemIds);
 	}
 }
 
 void ULunarListView::SynchronizeSlateItems()
 {
-	SlateItems.Reset(Items.Num());
-	TSet<TObjectKey<UObject>> AddedItems;
-	for (const TObjectPtr<UObject>& ItemPointer : Items)
+	if (ListViewWidget.IsValid())
 	{
-		UObject* Item = ItemPointer.Get();
-		if (IsValid(Item) && !AddedItems.Contains(TObjectKey<UObject>(Item)))
-		{
-			AddedItems.Add(TObjectKey<UObject>(Item));
-			SlateItems.Add(Item);
-		}
+		ListViewWidget->CancelScrollIntoView();
+		ListViewWidget->ClearSelection();
+	}
+
+	ItemObjects.Reset();
+	SlateItems.Reset();
+	ItemIndexByObject.Reset();
+	ItemObjects.Reserve(Items.Num());
+	SlateItems.Reserve(Items.Num());
+	for (int32 ItemIndex = 0; ItemIndex < Items.Num(); ++ItemIndex)
+	{
+		ULunarListViewItemObject* ItemObject = NewObject<ULunarListViewItemObject>(this);
+		ItemObjects.Add(ItemObject);
+		SlateItems.Add(ItemObject);
+		ItemIndexByObject.Add(TObjectKey<UObject>(ItemObject), ItemIndex);
 	}
 
 	if (ListViewWidget.IsValid())
 	{
-		ListViewWidget->CancelScrollIntoView();
 		ListViewWidget->RequestListRefresh();
-		for (UObject* Item : SlateItems)
-		{
-			if (const TSharedPtr<ITableRow> Row = ListViewWidget->WidgetFromItem(Item))
-			{
-				Row->AsWidget()->SetEnabled(IsItemEnabled(FindLogicalIndexForItem(Item)));
-			}
-		}
 	}
 }
 
-void ULunarListView::SynchronizeSlateActiveItem()
+void ULunarListView::SynchronizeSlateSelectionAndActiveItem()
 {
 	if (!ListViewWidget.IsValid())
 	{
@@ -723,54 +1602,42 @@ void ULunarListView::SynchronizeSlateActiveItem()
 	}
 
 	ListViewWidget->CancelScrollIntoView();
-	UObject* ActiveItem = GetActiveItem();
-	if (!ActiveItem || !SlateItems.Contains(ActiveItem))
+	ListViewWidget->ClearSelection();
+	for (const FName SelectedItemId : SelectedItemIds)
 	{
-		ListViewWidget->ClearSelection();
+		const int32* SelectedIndex = ItemIndexById.Find(SelectedItemId);
+		if (SelectedIndex && ItemObjects.IsValidIndex(*SelectedIndex))
+		{
+			if (UObject* SelectedObject = ItemObjects[*SelectedIndex].Get())
+			{
+				ListViewWidget->SetItemSelection(SelectedObject, true, ESelectInfo::Direct);
+			}
+		}
+	}
+	ListViewWidget->Invalidate(EInvalidateWidgetReason::Paint);
+
+	const int32 ItemIndex = GetActiveItemIndex();
+	UObject* ActiveItemObject = ItemObjects.IsValidIndex(ItemIndex)
+		? ItemObjects[ItemIndex].Get()
+		: nullptr;
+	if (!ActiveItemObject || !SlateItems.Contains(ActiveItemObject))
+	{
 		PendingRowGenerationItemId = NAME_None;
 		return;
 	}
 
-	ListViewWidget->SetSelection(ActiveItem, ESelectInfo::Direct);
-	if (const TSharedPtr<ITableRow> ExistingRow = ListViewWidget->WidgetFromItem(ActiveItem))
+	const TSharedPtr<ITableRow> ExistingRow = ListViewWidget->WidgetFromItem(ActiveItemObject);
+	PendingRowGenerationItemId = ExistingRow.IsValid()
+		? NAME_None
+		: ActiveItemId;
+	ListViewWidget->RequestScrollIntoView(ActiveItemObject, GetOwningSlateUserIndex());
+	if (ExistingRow.IsValid())
 	{
-		HandleEntryInitialized(ActiveItem, ExistingRow.ToSharedRef());
-		PendingRowGenerationItemId = NAME_None;
-	}
-	else
-	{
-		PendingRowGenerationItemId = ActiveItemId;
-		ListViewWidget->RequestScrollIntoView(ActiveItem, GetOwningSlateUserIndex());
+		HandleEntryInitialized(ActiveItemObject, ExistingRow.ToSharedRef());
 	}
 }
-
-void ULunarListView::ApplyListViewPresentationStyle()
+void ULunarListView::ApplyListViewPresentation()
 {
-	DisplayedListViewStyle = ResolvedListViewStyle;
-	if (bHasExternalRowStyle)
-	{
-		DisplayedListViewStyle.bOverrideRowStyle = true;
-		DisplayedListViewStyle.RowStyle = ExternalRowStyle;
-	}
-	else if (!DisplayedListViewStyle.bOverrideRowStyle)
-	{
-		DisplayedListViewStyle.bOverrideRowStyle = true;
-		DisplayedListViewStyle.RowStyle =
-			FCoreStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("TableView.Row"));
-	}
-	if (bHasExternalScrollBarStyle)
-	{
-		DisplayedListViewStyle.bOverrideScrollBarStyle = true;
-		DisplayedListViewStyle.ScrollBarStyle = ExternalScrollBarStyle;
-	}
-	else if (!DisplayedListViewStyle.bOverrideScrollBarStyle)
-	{
-		DisplayedListViewStyle.bOverrideScrollBarStyle = true;
-		DisplayedListViewStyle.ScrollBarStyle =
-			FAppStyle::Get().GetWidgetStyle<FScrollBarStyle>(TEXT("ScrollBar"));
-	}
-	bListViewStylePending = false;
-
 	if (ListViewWidget.IsValid())
 	{
 		ListViewWidget->RequestListRefresh();
@@ -778,7 +1645,8 @@ void ULunarListView::ApplyListViewPresentationStyle()
 	}
 }
 
-void ULunarListView::ReportConfigurationErrors(const TMap<FString, FString>& CurrentErrors)
+void ULunarListView::ReportConfigurationErrors(
+	const TMap<FString, FString>& CurrentErrors)
 {
 	const FGameplayTag ConsoleCategory = FGameplayTag::RequestGameplayTag(TEXT("Lunar.Console"), false);
 	for (const TPair<FString, FString>& Pair : CurrentErrors)
@@ -817,7 +1685,8 @@ uint32 ULunarListView::GetOwningSlateUserIndex() const
 	return 0;
 }
 
-UObject* ULunarListView::FindGeneratedItemAtScreenPosition(const FVector2D& ScreenPosition) const
+UObject* ULunarListView::FindGeneratedItemAtScreenPosition(
+	const FVector2D& ScreenPosition) const
 {
 	if (!ListViewWidget.IsValid())
 	{
@@ -841,17 +1710,22 @@ UObject* ULunarListView::FindGeneratedItemAtScreenPosition(const FVector2D& Scre
 
 bool ULunarListView::IsPointerItemEligible(const UObject* Item) const
 {
-	const int32 ItemIndex = FindLogicalIndexForItem(Item);
-	return IsItemEligible(ItemIndex);
+	return IsItemEligible(FindLogicalIndexForItem(Item));
 }
 
 void ULunarListView::ResetPointerItemPress()
 {
 	PointerPressedItem = nullptr;
 	PointerItemPressScreenPosition = FVector2D::ZeroVector;
+	PressedItemIndex = INDEX_NONE;
 	bPointerPressedOverEligibleItem = false;
 	bTrackingPointerItemPress = false;
 	bTouchItemTapEligible = false;
+	bPointerItemPressIsTouch = false;
+	bPointerRangeSelectionModifier = false;
+	bPointerAdditiveSelectionModifier = false;
+	bActivatePointerItemOnRelease = false;
+	RefreshGeneratedEntries();
 }
 
 TSharedRef<ITableRow> ULunarListView::HandleGenerateRow(
@@ -859,44 +1733,119 @@ TSharedRef<ITableRow> ULunarListView::HandleGenerateRow(
 	const TSharedRef<STableViewBase>& OwnerTable)
 {
 	const int32 ItemIndex = FindLogicalIndexForItem(Item);
-	const FText RowText = ResolveItemDisplayText(Item);
-
-	TSharedRef<STextBlock> TextWidget = SNew(STextBlock).Text(RowText);
-	TextWidget->SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
-
-	TSharedRef<STableRow<UObject*>> Row =
-		SNew(STableRow<UObject*>, OwnerTable)
-		.Style(&DisplayedListViewStyle.RowStyle)
-		.IsEnabled(IsItemEnabled(ItemIndex))
+	TSharedRef<SWidget> RowContent =
+		SNew(SBorder)
+		.BorderImage(FStyleDefaults::GetNoBrush())
+		.Padding(FallbackEntryPadding)
 		[
-			TextWidget
+			SNew(STextBlock)
+			.Text(ResolveItemDisplayText(Item))
+			.TextStyle(&FallbackTextStyle)
+		];
+
+	ULunarListViewEntry* GeneratedEntry = nullptr;
+	UClass* ResolvedEntryClass = EntryWidgetClass.Get();
+	const bool bCanInstantiateEntry = ResolvedEntryClass
+		&& !ResolvedEntryClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists);
+	if (bCanInstantiateEntry && Items.IsValidIndex(ItemIndex))
+	{
+		GeneratedEntry = CreateWidget<ULunarListViewEntry>(this, ResolvedEntryClass);
+		if (IsValid(GeneratedEntry))
+		{
+			GeneratedEntry->InitializeFromListView(
+				this,
+				ItemIndex,
+				Items[ItemIndex],
+				ResolveItemVisualState(ItemIndex),
+				ItemIndex == GetActiveItemIndex(),
+			IsItemSelectedByIndex(ItemIndex));
+			GeneratedEntry->SetVisibility(ESlateVisibility::HitTestInvisible);
+			GeneratedEntries.Add(GeneratedEntry);
+			RowContent = GeneratedEntry->TakeWidget();
+			GeneratedEntry->ApplyDataFromListView(ItemIndex, Items[ItemIndex]);
+			GeneratedEntry->ApplyVisualStateFromListView(
+				ResolveItemVisualState(ItemIndex),
+				ItemIndex == GetActiveItemIndex(),
+			IsItemSelectedByIndex(ItemIndex));
+		}
+	}
+
+	TSharedRef<LunarListView_Private::SLunarListViewPassthroughRow> Row =
+		SNew(LunarListView_Private::SLunarListViewPassthroughRow, OwnerTable)
+		.Style(&RowPresentationStyle)
+		[
+			RowContent
 		];
 	Row->SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
+	if (GeneratedEntry)
+	{
+		GeneratedEntryByRow.Add(&Row.Get(), GeneratedEntry);
+	}
 	return Row;
 }
 
-void ULunarListView::HandleEntryInitialized(UObject* Item, const TSharedRef<ITableRow>& Row)
+void ULunarListView::HandleEntryInitialized(
+	UObject* Item,
+	const TSharedRef<ITableRow>& Row)
 {
 	const int32 ItemIndex = FindLogicalIndexForItem(Item);
 	const TSharedRef<SWidget> RowWidget = Row->AsWidget();
 	RowWidget->SetAccessibleBehavior(EAccessibleBehavior::NotAccessible);
-	RowWidget->SetEnabled(IsItemEnabled(ItemIndex));
+	RowWidget->SetEnabled(true);
 
-	if (CachedItemIds.IsValidIndex(ItemIndex) && CachedItemIds[ItemIndex] == ActiveItemId)
+	if (const TWeakObjectPtr<ULunarListViewEntry>* EntryPointer =
+		GeneratedEntryByRow.Find(&Row.Get()))
 	{
-		PendingRowGenerationItemId = NAME_None;
+		if (ULunarListViewEntry* Entry = EntryPointer->Get();
+			IsValid(Entry) && Items.IsValidIndex(ItemIndex))
+		{
+			Entry->ApplyDataFromListView(ItemIndex, Items[ItemIndex]);
+			Entry->ApplyVisualStateFromListView(
+				ResolveItemVisualState(ItemIndex),
+				ItemIndex == GetActiveItemIndex(),
+			IsItemSelectedByIndex(ItemIndex));
+		}
+	}
+
+}
+
+void ULunarListView::HandleRowReleased(const TSharedRef<ITableRow>& Row)
+{
+	if (const TWeakObjectPtr<ULunarListViewEntry>* EntryPointer =
+		GeneratedEntryByRow.Find(&Row.Get()))
+	{
+		if (ULunarListViewEntry* Entry = EntryPointer->Get())
+		{
+			GeneratedEntries.RemoveSingleSwap(Entry);
+		}
+		GeneratedEntryByRow.Remove(&Row.Get());
 	}
 }
 
-void ULunarListView::HandleItemScrolledIntoView(UObject* Item, const TSharedPtr<ITableRow>& Row)
+void ULunarListView::HandleItemScrolledIntoView(
+	UObject* Item,
+	const TSharedPtr<ITableRow>& Row)
 {
+	const int32 ItemIndex = FindLogicalIndexForItem(Item);
+	const bool bIsActiveItem = CachedItemIds.IsValidIndex(ItemIndex)
+		&& CachedItemIds[ItemIndex] == ActiveItemId;
+	const bool bNeedsFinalReveal = Row.IsValid()
+		&& bIsActiveItem
+		&& PendingRowGenerationItemId == ActiveItemId;
+
 	if (Row.IsValid())
 	{
 		HandleEntryInitialized(Item, Row.ToSharedRef());
 	}
-	if (Item == GetActiveItem())
+	if (bIsActiveItem)
 	{
 		PendingRowGenerationItemId = NAME_None;
+		if (bNeedsFinalReveal && ListViewWidget.IsValid())
+		{
+			// The first request may only generate a virtualized edge row. Re-request
+			// after that row has valid geometry so horizontal wrap reveals it fully.
+			ListViewWidget->RequestScrollIntoView(Item, GetOwningSlateUserIndex());
+		}
 	}
 }
 

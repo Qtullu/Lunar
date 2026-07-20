@@ -13,11 +13,13 @@ Do not wrap the Lunar control in a native `UButton` that independently handles t
 
 ## Presentation Binding
 
-- Bind project-specific presentation reactions to `BP_OnLunarVisualStateChanged`.
-- Use the resolved `FLunarUIVisualState`; do not reproduce input-device, selected, pressed, or disabled state resolution in Blueprint. Common C++ style fields are applied by the native control.
-- Bind gameplay or menu behavior to `OnClicked` (or override `BP_OnLunarActivated`). Navigation Accept, pointer release, touch tap, and `Click()` all converge on that guarded activation path.
-- Use `OnLunarPressed` and `OnLunarReleased` only for presentation. Do not trigger the action on Pressed; Button activation is release-based.
-- Leave `StyleAsset`, prompt classes, icon sets, sounds, and haptics unassigned until their owner-created assets exist. No guessed package paths are required.
+- Implement `On Lunar Visual State Changed` in the Button Blueprint. It receives Previous State, New State, and Designer Preview; use New State to drive arbitrary owner-created Borders, Images, TextBlocks, animations, and other content.
+- The first callback initializes presentation even when Previous State equals New State. Do not wait for a later hover or selection transition before drawing the neutral state.
+- Use `Preview Mode = Custom` and `Preview Visual State` in the UMG Designer to inspect enabled, disabled, pointer, navigation, device, and reduced-motion combinations without PIE. Return Preview Mode to None when not authoring a preview.
+- `ULunarButton` has no Style Asset or automatic field traversal. It never guesses which owner widget is the background, border, label, or font target.
+- Implement `On Lunar Clicked` inside the Button Blueprint for its behavior. External objects may bind to `OnClicked(ClickedButton)` and every common Lunar delegate identifies the emitting widget.
+- Use Pressed, Hold Progress, Released, and Rejected overrides for their own lifecycle logic. Button activation remains release-based; do not trigger the main click action from Pressed.
+- Leave prompt classes, icon sets, reusable Sound/Haptic Feedback Data Assets, and global feedback defaults unassigned until the owner-created assets exist. No guessed package paths are required.
 
 ## Instance Setup
 

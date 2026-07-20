@@ -6,7 +6,6 @@
 #include "Components/ScrollBox.h"
 #include "Containers/Ticker.h"
 #include "UI/Navigation/Types/LunarNavigationTypes.h"
-#include "UI/Navigation/Types/LunarUIStyleTypes.h"
 #include "LunarScrollBox.generated.h"
 
 /**
@@ -16,9 +15,9 @@
  */
 
 class ULunarNavigationSubsystem;
-class ULunarScrollBoxStyleAsset;
 class SLunarNavigationScrollBox;
 class ULunarScrollBox;
+class UCurveFloat;
 
 /**
  * @brief Native completion notification for selection-driven Lunar scrolling
@@ -42,7 +41,7 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(
  *
  * @ingroup LunarNavigationControls
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, Blueprintable)
 class LUNAR_API ULunarScrollBox : public UScrollBox
 {
 	GENERATED_BODY()
@@ -54,25 +53,53 @@ public:
 	 */
 	ULunarScrollBox(const FObjectInitializer& ObjectInitializer);
 
+#if WITH_EDITOR
+	/** @return Shared UMG Palette category for Lunar navigation controls and containers. */
+	virtual const FText GetPaletteCategory() override;
+#endif
+
 	/**
 	 * @brief Reveals a descendant using the minimum required offset for this container
 	 * @param WidgetToReveal Descendant widget that should become visible
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Scroll")
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Scroll")
 	void ScrollWidgetIntoLunarView(UWidget* WidgetToReveal);
 
 	/** Stops the current Lunar scroll and releases any direct-scroll capture. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Scroll")
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Scroll")
 	void CancelLunarScroll();
 
 	/**
 	 * @brief Checks whether a smooth selection-driven Lunar scroll is active
 	 * @return True while a Lunar smooth-scroll operation is running
 	 */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Scroll")
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Scroll")
 	bool IsLunarScrollActive() const;
 
-	/** @brief Synchronizes runtime policies, settings, and resolved style. */
+	/** Sets the cached native scroll-bar style. @param NewStyle New native scroll-bar style. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Scroll|Presentation")
+	void SetScrollBarPresentationStyle(const FScrollBarStyle& NewStyle);
+
+	/** Returns the cached native scroll-bar style. @return Current native scroll-bar style. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Scroll|Presentation")
+	FScrollBarStyle GetScrollBarPresentationStyle() const { return ScrollBarPresentationStyle; }
+
+	/** Sets padding around the native scroll bar. @param NewPadding New scroll-bar padding. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Scroll|Presentation")
+	void SetScrollBarPresentationPadding(FMargin NewPadding);
+
+	/** Returns padding around the native scroll bar. @return Current scroll-bar padding. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Scroll|Presentation")
+	FMargin GetScrollBarPresentationPadding() const { return ScrollBarPresentationPadding; }
+
+	/** Configures every native ScrollBox presentation value. @param NewStyle New scroll-bar style. @param NewPadding New scroll-bar padding. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Scroll|Presentation")
+	void ConfigureScrollBoxPresentation(const FScrollBarStyle& NewStyle, FMargin NewPadding);
+
+	/** Returns every cached native ScrollBox presentation value. @param OutStyle Current scroll-bar style. @param OutPadding Current scroll-bar padding. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Scroll|Presentation")
+	void GetScrollBoxPresentation(FScrollBarStyle& OutStyle, FMargin& OutPadding) const;
+	/** @brief Synchronizes runtime policies, settings, and cached native presentation. */
 	virtual void SynchronizeProperties() override;
 	/**
 	 * @brief Releases custom Slate and ticker resources
@@ -82,24 +109,48 @@ public:
 	/** @brief Cancels outstanding ticker work before UObject destruction. */
 	virtual void BeginDestroy() override;
 
-	/** Per-instance reveal behavior. A positive duration takes precedence over speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Scroll")
-	FLunarScrollIntoViewSettings ScrollIntoViewSettings;
+	/** Safe padding retained between a selected descendant and the visible viewport edges. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll")
+	FMargin ViewportPadding = FMargin(0.0f);
+
+	/** Primary scrolling and local-navigation axis exposed in Lunar Details. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll", meta = (DisplayName = "Orientation"))
+	TEnumAsByte<EOrientation> ScrollOrientation = Orient_Vertical;
+
+	/** Wraps navigation between opposite ends along this container's orientation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll")
+	bool bWrapNavigation = false;
+
+	/** Traps Lunar selection inside this container until explicitly released or Back is pressed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll")
+	bool bConstrainNavigation = false;
+
+	/** Releases active confinement after a handled navigation Accept; pointer activation is unaffected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll", meta = (EditCondition = "bConstrainNavigation"))
+	bool bExitConfinementOnNavigationAccept = false;
 
 	/** Lets an unused wheel delta bubble to an ancestor scroll container. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Scroll")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll")
 	bool bAllowScrollChaining = true;
 
-	/** Strongly typed ScrollBox style. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation|Style")
-	TObjectPtr<ULunarScrollBoxStyleAsset> StyleAsset;
+	/** Interpolates selection-driven reveal scrolling instead of snapping immediately. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll|Interpolation", meta = (DisplayName = "Interpolate Scroll Into View"))
+	bool bInterpolateScrollIntoView = false;
+
+	/** Controls normalized selection-scroll curve traversals per second; zero snaps immediately. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll|Interpolation", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bInterpolateScrollIntoView"))
+	float ScrollInterpolationSpeed = 12.0f;
+
+	/** Maps normalized reveal progress to presentation alpha; null uses linear interpolation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Scroll|Interpolation", meta = (EditCondition = "bInterpolateScrollIntoView"))
+	TObjectPtr<UCurveFloat> ScrollInterpolationCurve = nullptr;
 
 	/** Broadcast when a selection-driven smooth scroll begins. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Scroll")
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Scroll")
 	FLunarScrollStateChangedSignature OnLunarScrollStarted;
 
 	/** Broadcast when a selection-driven smooth scroll completes or is cancelled. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Scroll")
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Scroll")
 	FLunarScrollStateChangedSignature OnLunarScrollFinished;
 
 protected:
@@ -125,41 +176,10 @@ private:
 	void RegisterWithNavigationSubsystem();
 	/** @brief Removes this container from its previously registered subsystem. */
 	void UnregisterFromNavigationSubsystem();
-	/** @brief Resolves and applies the active strongly typed ScrollBox style. */
-	void ApplyResolvedStyle();
-	/** @brief Captures native style values used when an override stops applying. */
-	void EnsureStyleBaseline();
-	/**
-	 * @brief Expands a resolved style patch against captured native baselines
-	 * @param ResolvedStyle Partial style patch produced by style resolution
-	 * @return Complete materialized style snapshot suitable for transitions
-	 */
-	FLunarScrollBoxStylePatch MaterializeStyleSnapshot(const FLunarScrollBoxStylePatch& ResolvedStyle) const;
-	/**
-	 * @brief Starts, reverses, or immediately applies a materialized style target
-	 * @param NewTarget New logical style target
-	 */
-	void ApplyStyleTarget(const FLunarScrollBoxStylePatch& NewTarget);
-	/**
-	 * @brief Stores and applies one interpolated style snapshot
-	 * @param NewDisplayedStyle Style snapshot to display
-	 */
-	void ApplyDisplayedStyle(const FLunarScrollBoxStylePatch& NewDisplayedStyle);
-	/**
-	 * @brief Advances the active style transition
-	 * @param DeltaTime Elapsed ticker time in seconds
-	 * @return True to keep the ticker active, false after completion
-	 */
-	bool TickStyleTransition(float DeltaTime);
-	/** @brief Stops and unregisters the style-transition ticker. */
-	void StopStyleTransition();
 	/** @brief Enforces non-focusable Lunar container input and clipping policies. */
 	void ApplyRuntimePolicies();
-	/**
-	 * @brief Updates the direct-pointer interaction state and refreshes style
-	 * @param NewInteractionState New pointer interaction state
-	 */
-	void SetDirectInteractionState(ELunarUIInteractionState NewInteractionState);
+	/** Applies cached native scroll-bar presentation to UMG and Slate. */
+	void ApplyNativePresentation();
 
 	/**
 	 * @brief Validates that a reveal target is a visible descendant of this container
@@ -180,17 +200,23 @@ private:
 	 */
 	void ApplyLunarScrollOffset(float NewOffset);
 	/**
-	 * @brief Starts a smooth reveal operation toward a target offset
+	 * @brief Starts an interpolated reveal operation toward a target offset
 	 * @param WidgetToReveal Descendant whose validity must remain tracked
 	 * @param TargetOffset Destination scroll offset
 	 */
-	void StartSmoothLunarScroll(UWidget* WidgetToReveal, float TargetOffset);
+	void StartInterpolatedLunarScroll(UWidget* WidgetToReveal, float TargetOffset);
 	/**
 	 * @brief Advances the active smooth reveal operation
 	 * @param DeltaTime Elapsed ticker time in seconds
 	 * @return True to keep the ticker active, false after completion or cancellation
 	 */
-	bool TickSmoothLunarScroll(float DeltaTime);
+	bool TickInterpolatedLunarScroll(float DeltaTime);
+	/** @param Progress Normalized interpolation progress. @return Sanitized curve alpha, or Progress when the curve is null or invalid. */
+	float EvaluateScrollInterpolationCurve(float Progress) const;
+	/** @return True when selection reveal must snap because interpolation is unavailable or suppressed. */
+	bool ShouldSnapScrollIntoView() const;
+	/** @brief Sanitizes editable interpolation values before they are consumed. */
+	void NormalizeInterpolationSettings();
 	/**
 	 * @brief Finalizes an active smooth reveal operation
 	 * @param bBroadcastFinished Whether to broadcast completion notifications
@@ -238,8 +264,6 @@ private:
 	TWeakObjectPtr<UWidget> ActiveScrollTarget;
 	/** Core ticker handle for the active selection-driven smooth scroll. */
 	FTSTicker::FDelegateHandle LunarScrollTickerHandle;
-	/** Core ticker handle for the active visual-style transition. */
-	FTSTicker::FDelegateHandle StyleTransitionTickerHandle;
 
 	/** Scroll offset captured at the start of a smooth reveal operation. */
 	float LunarScrollStartOffset = 0.0f;
@@ -247,46 +271,19 @@ private:
 	float LunarScrollTargetOffset = 0.0f;
 	/** Elapsed time in the active smooth reveal operation. */
 	float LunarScrollElapsed = 0.0f;
-	/** Calculated duration of the active smooth reveal operation. */
-	float LunarScrollDuration = 0.0f;
+
 	/** Last offset authorized by Lunar or direct input ownership. */
 	float LastAuthorizedScrollOffset = 0.0f;
 	/** Whether a selection-driven smooth reveal operation is active. */
 	bool bLunarScrollActive = false;
 	/** Guards the native scroll callback while Lunar applies an authorized offset. */
 	bool bApplyingLunarScrollOffset = false;
-	/** Direct mouse or touch interaction state used for style resolution. */
-	ELunarUIInteractionState DirectInteractionState = ELunarUIInteractionState::PointerNormal;
-	/** Complete style snapshot currently applied to the container. */
-	FLunarScrollBoxStylePatch DisplayedStyle;
-	/** Style snapshot at the start of the active transition. */
-	FLunarScrollBoxStylePatch TransitionSourceStyle;
-	/** Materialized destination of the active style transition. */
-	FLunarScrollBoxStylePatch TransitionTargetStyle;
-	/** Latest logical style target, including discrete fields. */
-	FLunarScrollBoxStylePatch LogicalTargetStyle;
-	/** Elapsed time in the active style transition. */
-	float StyleTransitionElapsed = 0.0f;
-	/** Duration of the active style transition. */
-	float StyleTransitionDuration = 0.0f;
-	/** Native render opacity captured before Lunar style overrides. */
-	float StyleBaselineRenderOpacity = 1.0f;
-	/** Native render transform captured before Lunar style overrides. */
-	FWidgetTransform StyleBaselineRenderTransform;
-	/** Native render-transform pivot captured before Lunar style overrides. */
-	FVector2D StyleBaselineRenderTransformPivot = FVector2D::ZeroVector;
-	/** Native scroll-bar style captured before Lunar style overrides. */
-	FScrollBarStyle StyleBaselineScrollBarStyle;
-	/** Native scroll-bar padding captured before Lunar style overrides. */
-	FMargin StyleBaselineScrollBarPadding;
-	/** Whether a visual-style transition is currently active. */
-	bool bStyleTransitionActive = false;
-	/** Whether the active transition is reversing toward its previous source. */
-	bool bStyleTransitionReversing = false;
-	/** Whether DisplayedStyle contains a valid materialized snapshot. */
-	bool bHasDisplayedStyle = false;
-	/** Whether native baseline values have been captured. */
-	bool bHasStyleBaseline = false;
+	/** Cached native scroll-bar style reapplied after Slate reconstruction. */
+	UPROPERTY(Transient)
+	FScrollBarStyle ScrollBarPresentationStyle;
+	/** Cached native scroll-bar padding reapplied after Slate reconstruction. */
+	UPROPERTY(Transient)
+	FMargin ScrollBarPresentationPadding;
 	/** Native completion signal used by the navigation subsystem. */
 	FOnLunarScrollFinishedNative LunarScrollFinishedNative;
 

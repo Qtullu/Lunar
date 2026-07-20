@@ -141,6 +141,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation")
 	ELunarInputDeviceType GetLastInputDevice() const;
 
+	/**
+	 * @brief Resolves the active left-stick direction retained by one control.
+	 * @param Widget Expected owner of the handled analog press.
+	 * @param OutDirection Receives the active cardinal stick direction.
+	 * @param OutMagnitude Receives the current normalized stick magnitude.
+	 * @return True only while Widget remains selected and owns the active analog press.
+	 */
+	bool GetActiveAnalogNavigationForWidget(
+		const ULunarNavigableWidget* Widget,
+		ELunarNavigationDirection& OutDirection,
+		float& OutMagnitude) const;
+
 	/** @brief Registers a constructed navigable control. @param Widget Control to register. @return True when registration is accepted. */
 	bool RegisterNavigableWidget(ULunarNavigableWidget* Widget);
 	/** @brief Removes a navigable control from every runtime registry. @param Widget Control to unregister. */
@@ -199,6 +211,10 @@ private:
 		bool bHasDirection = false;
 		/** Cardinal direction associated with the action when bHasDirection is true. */
 		ELunarNavigationDirection Direction = ELunarNavigationDirection::Up;
+		/** Range-selection modifier captured when the press was dispatched. */
+		bool bRangeSelectionModifier = false;
+		/** Additive-selection modifier captured when the press was dispatched. */
+		bool bAdditiveSelectionModifier = false;
 	};
 
 	/** @param Widget Widget to resolve. @return Owning scope selected by override and hierarchy, or nullptr. */
@@ -211,6 +227,11 @@ private:
 	bool IsWidgetEligibleInScope(const ULunarNavigableWidget* Widget, const ULunarNavigationScope* Scope) const;
 	/** @param Widget Candidate widget. @param Scope Graph scope, active or inactive. @return True when graph-eligible. */
 	bool IsWidgetEligibleInGraphScope(const ULunarNavigableWidget* Widget, const ULunarNavigationScope* Scope) const;
+	/** @param Widget Candidate widget. @param Scope Graph scope. @param InputDevice Active keyboard or gamepad channel. @return True when graph-eligible for that channel. */
+	bool IsWidgetEligibleForNavigationInput(
+		const ULunarNavigableWidget* Widget,
+		const ULunarNavigationScope* Scope,
+		ELunarInputDeviceType InputDevice) const;
 	/** @param RootWidget Hierarchy root. @param OutWidgets Receives all descendant Lunar controls. */
 	void GatherNavigableDescendants(UWidget* RootWidget, TArray<ULunarNavigableWidget*>& OutWidgets) const;
 	/** @param Widget Widget that needs a stable lifetime order. */
@@ -241,7 +262,22 @@ private:
 		ULunarNavigableWidget* Current,
 		ELunarNavigationDirection Direction,
 		bool bWrap,
-		const ULunarNavigationScope* Scope) const;
+		const ULunarNavigationScope* Scope,
+		const ULunarScrollBox* RestrictToScrollBox = nullptr) const;
+	/** @param Widget Descendant used to locate a container. @param bRequireConfinement Whether the container must trap navigation. @param bRequireMatchingOrientation Whether its orientation must match Direction. @param Direction Direction used by the optional orientation filter. @return Deepest matching registered container. */
+	ULunarScrollBox* FindDeepestContainingScrollBox(
+		const UWidget* Widget,
+		bool bRequireConfinement,
+		bool bRequireMatchingOrientation,
+		ELunarNavigationDirection Direction) const;
+	/** @param Widget Candidate interaction target. @return True when no active ScrollBox confinement excludes it. */
+	bool IsWidgetAllowedByScrollConfinement(const ULunarNavigableWidget* Widget) const;
+	/** @param ScrollBox Candidate direct-scroll owner. @return True when no active confinement excludes it. */
+	bool IsScrollBoxAllowedByNavigationConfinement(const ULunarScrollBox* ScrollBox) const;
+	/** @param Widget Pointer-selected target. @return True when the eligible target was selected after releasing an enclosing confinement when required. */
+	bool SetSelectedWidgetFromPointer(ULunarNavigableWidget* Widget);
+	/** @param bRestorePreviousSelection Whether to restore the widget selected before automatic entry. @return True when an active confinement was released. */
+	bool ReleaseScrollNavigationConfinement(bool bRestorePreviousSelection);
 	/** @param bUsePreviousGeometry Whether recovery should start near the lost selection. @return True when selection was recovered. */
 	bool RecoverSelection(bool bUsePreviousGeometry);
 	/** @brief Synchronizes Slate user focus with delegated focus or Lunar selection. */
@@ -289,6 +325,8 @@ private:
 	void BroadcastRejected(const FLunarUIActionContext& ActionContext);
 	/** @return True when controls should use pointer presentation. */
 	bool IsPointerPresentationActive() const;
+	/** @return True while an intentional pointer-selected external Slate text editor owns keyboard input. */
+	bool IsExternalNativeTextInputActive() const;
 	/** @return Native multicast used by constructed controls. */
 	FOnLunarInputPresentationChanged& OnInputPresentationChangedNative() { return InputPresentationChangedNative; }
 	/** @param SoundSpec Sound configuration to play for this local player. */
@@ -413,6 +451,10 @@ private:
 	TWeakObjectPtr<ULunarScrollBox> ActiveSelectionScrollBox;
 	/** Subscription to completion of the active scroll container. */
 	FDelegateHandle ActiveSelectionScrollFinishedHandle;
+	/** ScrollBox currently trapping directional and pointer selection. */
+	TWeakObjectPtr<ULunarScrollBox> ActiveScrollNavigationConfinement;
+	/** Selection restored when the active ScrollBox confinement exits. */
+	TWeakObjectPtr<ULunarNavigableWidget> ScrollNavigationReturnWidget;
 
 	/** Transient audio components playing UI feedback for this local player. */
 	UPROPERTY(Transient)
@@ -441,10 +483,15 @@ private:
 	/** Prompt-configuration error keys already reported. */
 	TSet<FString> ReportedPromptErrorKeys;
 
+	/** Input channel temporarily filtering navigation candidates during physical dispatch. */
+	ELunarInputDeviceType NavigationDispatchInputDevice = ELunarInputDeviceType::Unknown;
+
 	/** Physical keys whose release must remain consumed after a handled press. */
 	TSet<FKey> ConsumedKeyUps;
 	/** Digital keys currently held by this local player. */
 	TSet<FKey> HeldDigitalKeys;
+	/** Keyboard and gamepad keys currently acting as multi-selection modifiers. */
+	TSet<FKey> HeldSelectionModifierKeys;
 	/** Semantic press state retained by physical key. */
 	TMap<FKey, FPressedActionState> PressedActions;
 	/** Digital direction key that currently owns repeat timing. */
@@ -517,6 +564,8 @@ private:
 	bool bSuppressGraphSelectionRecovery = false;
 	/** Reentrancy guard for push/pop operations and callbacks. */
 	bool bScopeStackMutationInProgress = false;
+	/** Guard allowing the stored return selection to cross the active ScrollBox boundary. */
+	bool bReleasingScrollNavigationConfinement = false;
 	/** Whether the scroll chain should resume on a later tick. */
 	bool bSelectionScrollAdvancePending = false;
 	/** Reentrancy guard for scroll-chain advancement. */

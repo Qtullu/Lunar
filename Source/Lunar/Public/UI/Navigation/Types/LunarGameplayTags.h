@@ -29,6 +29,8 @@ namespace LunarGameplayTags
 	LUNAR_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Action_Increase);
 	/** @brief Decrease an orientation-aware value control. */
 	LUNAR_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Action_Decrease);
+	/** @brief Toggle selection of the active item in a multi-select control. */
+	LUNAR_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Action_Selection_Toggle);
 
 	/** @brief Normal control value state. */
 	LUNAR_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_State_Value_Normal);

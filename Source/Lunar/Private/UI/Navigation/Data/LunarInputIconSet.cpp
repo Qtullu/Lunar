@@ -32,7 +32,9 @@ bool ULunarInputIconSet::ResolveIconForKey(const FKey InputKey, FSlateBrush& Out
 		ResolvedEntry = &Entry;
 	}
 
-	if (!ResolvedEntry || !ResolvedEntry->Icon.IsSet())
+	if (!ResolvedEntry
+		|| (!ResolvedEntry->Icon.GetResourceObject()
+			&& ResolvedEntry->Icon.GetResourceName().IsNone()))
 	{
 		return false;
 	}

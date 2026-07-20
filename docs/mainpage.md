@@ -116,11 +116,11 @@ Subsystems are persistent runtime services used by the plugin and exposed to Blu
 
 
 
-The public control set includes @ref ULunarButton @ref ULunarSlider @ref ULunarOptionSlider @ref ULunarSwitch @ref ULunarRadio @ref ULunarRadioGroup @ref ULunarScrollBox @ref ULunarListView @ref ULunarComboBox @ref ULunarContextMenu @ref ULunarTabs and @ref ULunarTabHeader
+The public control set includes @ref ULunarButton @ref ULunarSlider @ref ULunarOptionSlider @ref ULunarSwitch @ref ULunarRadio @ref ULunarScrollBox @ref ULunarListView @ref ULunarComboBox @ref ULunarContextMenu @ref ULunarTabs and @ref ULunarTabHeader. @ref ULunarRadioSideVisual is the optional non-navigable Blueprint presentation base generated for Radio options.
 
 
 
-Prompt presentation is provided by @ref ILunarInputPromptReceiver and @ref ULunarInputPromptWidget. @ref ULunarUIActionRegistry stores semantic action definitions, @ref ULunarInputIconSet maps resolved keys to brushes, and the typed @c ULunar*StyleAsset data assets provide inherited control presentation without hard-coded Content paths
+Prompt presentation is provided by @ref ILunarInputPromptReceiver and @ref ULunarInputPromptWidget. @ref ULunarUIActionRegistry stores semantic action definitions, @ref ULunarInputIconSet maps resolved keys to brushes, and @ref ULunarUISoundFeedbackAsset plus @ref ULunarUIHapticFeedbackAsset provide reusable feedback sets. Control visuals are authored in Blueprint from the published Lunar visual state; native-only complex parts expose explicit presentation Set/Get/Configure/Get functions
 
 
 

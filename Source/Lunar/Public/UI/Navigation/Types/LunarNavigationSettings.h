@@ -6,17 +6,6 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/Navigation/Data/LunarInputIconSet.h"
 #include "UI/Navigation/Data/LunarUIActionRegistry.h"
-#include "UI/Navigation/Styles/LunarButtonStyleAsset.h"
-#include "UI/Navigation/Styles/LunarComboBoxStyleAsset.h"
-#include "UI/Navigation/Styles/LunarContextMenuStyleAsset.h"
-#include "UI/Navigation/Styles/LunarInputPromptStyleAsset.h"
-#include "UI/Navigation/Styles/LunarListViewStyleAsset.h"
-#include "UI/Navigation/Styles/LunarOptionSliderStyleAsset.h"
-#include "UI/Navigation/Styles/LunarRadioStyleAsset.h"
-#include "UI/Navigation/Styles/LunarScrollBoxStyleAsset.h"
-#include "UI/Navigation/Styles/LunarSliderStyleAsset.h"
-#include "UI/Navigation/Styles/LunarSwitchStyleAsset.h"
-#include "UI/Navigation/Styles/LunarTabsStyleAsset.h"
 #include "UI/Navigation/Types/LunarInputPromptTypes.h"
 #include "UI/Navigation/Types/LunarNavigationTypes.h"
 #include "UI/Navigation/Types/LunarUIFeedbackTypes.h"
@@ -93,9 +82,6 @@ struct LUNAR_API FLunarNavigationBehaviorSettings
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Behavior")
 	bool bRecoverSelectionAutomatically = true;
 
-	/** Default selection-driven scroll-into-view behavior. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Behavior")
-	FLunarScrollIntoViewSettings DefaultScrollIntoViewSettings;
 
 	/** Default top-level cursor visibility and gameplay pointer-capture policy. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Behavior")
@@ -104,60 +90,6 @@ struct LUNAR_API FLunarNavigationBehaviorSettings
 	/** Allows unused direct-scroll delta to pass from an inner ScrollBox to its parent. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Behavior")
 	bool bAllowScrollChainingByDefault = true;
-};
-
-/**
- * @brief Global per-control style assets used when a widget has no explicit style
- * @ingroup LunarNavigationTypes
- */
-USTRUCT(BlueprintType)
-struct LUNAR_API FLunarNavigationDefaultStyleSettings
-{
-	GENERATED_BODY()
-
-	/** TODO(LunarUI): Assign the default Button style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarButtonStyleAsset> DefaultButtonStyle;
-
-	/** TODO(LunarUI): Assign the default Slider style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarSliderStyleAsset> DefaultSliderStyle;
-
-	/** TODO(LunarUI): Assign the default OptionSlider style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarOptionSliderStyleAsset> DefaultOptionSliderStyle;
-
-	/** TODO(LunarUI): Assign the default Switch style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarSwitchStyleAsset> DefaultSwitchStyle;
-
-	/** TODO(LunarUI): Assign the default Radio style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarRadioStyleAsset> DefaultRadioStyle;
-
-	/** TODO(LunarUI): Assign the default ScrollBox style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarScrollBoxStyleAsset> DefaultScrollBoxStyle;
-
-	/** TODO(LunarUI): Assign the default ListView style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarListViewStyleAsset> DefaultListViewStyle;
-
-	/** TODO(LunarUI): Assign the default ComboBox style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarComboBoxStyleAsset> DefaultComboBoxStyle;
-
-	/** TODO(LunarUI): Assign the default ContextMenu style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarContextMenuStyleAsset> DefaultContextMenuStyle;
-
-	/** TODO(LunarUI): Assign the default Tabs style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarTabsStyleAsset> DefaultTabsStyle;
-
-	/** TODO(LunarUI): Assign the default Input Prompt style after its owner-created asset exists. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Default Styles")
-	TSoftObjectPtr<ULunarInputPromptStyleAsset> DefaultInputPromptStyle;
 };
 
 /**
@@ -177,9 +109,9 @@ struct LUNAR_API FLunarUIAudioSettings
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
 	FLunarUISoundSpec DefaultPointerPressedSound;
 
-	/** TODO(LunarUI): Assign the default pointer-activated sound if Lunar ships one. */
+	/** TODO(LunarUI): Assign the default pointer-clicked sound if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
-	FLunarUISoundSpec DefaultPointerActivatedSound;
+	FLunarUISoundSpec DefaultPointerClickedSound;
 
 	/** TODO(LunarUI): Assign the default pointer-rejected sound if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
@@ -193,9 +125,9 @@ struct LUNAR_API FLunarUIAudioSettings
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
 	FLunarUISoundSpec DefaultNavigationPressedSound;
 
-	/** TODO(LunarUI): Assign the default navigation-activated sound if Lunar ships one. */
+	/** TODO(LunarUI): Assign the default navigation-clicked sound if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
-	FLunarUISoundSpec DefaultNavigationActivatedSound;
+	FLunarUISoundSpec DefaultNavigationClickedSound;
 
 	/** TODO(LunarUI): Assign the default navigation-rejected sound if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Audio")
@@ -219,9 +151,9 @@ struct LUNAR_API FLunarUIHapticSettings
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Haptics")
 	FLunarUIHapticSpec DefaultNavigationPressedHaptic;
 
-	/** TODO(LunarUI): Assign the default activated haptic if Lunar ships one. */
+	/** TODO(LunarUI): Assign the default navigation-clicked haptic if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Haptics")
-	FLunarUIHapticSpec DefaultNavigationActivatedHaptic;
+	FLunarUIHapticSpec DefaultNavigationClickedHaptic;
 
 	/** TODO(LunarUI): Assign the default rejected haptic if Lunar ships one. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Haptics")
@@ -314,10 +246,6 @@ struct LUNAR_API FLunarNavigationSettings
 	/** Selection, fallback, pointer, and scrolling behavior. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation")
 	FLunarNavigationBehaviorSettings Behavior;
-
-	/** Default style assets for navigation controls and prompts. */
-	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation")
-	FLunarNavigationDefaultStyleSettings DefaultStyles;
 
 	/** Default non-spatial UI sounds. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation")

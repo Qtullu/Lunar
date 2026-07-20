@@ -15,9 +15,10 @@
 
 class ULunarNavigationScope;
 class ULunarNavigationSubsystem;
+class ULunarScreenWidget;
 
-/** @brief Broadcast when a Lunar screen finishes opening or closing its scope. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLunarScreenEventSignature);
+/** @brief Broadcast when a Lunar screen finishes opening or closing its scope, including its source object. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLunarScreenEventSignature, ULunarScreenWidget*, ScreenWidget);
 
 /**
  * @brief Top-level Lunar screen that owns one automatically managed navigation scope.

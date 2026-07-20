@@ -2,12 +2,11 @@
 
 #include "UI/Navigation/Controls/LunarButton.h"
 
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
 
 /**
  * @file LunarButton.cpp
- * @brief Lunar push-button behavior and style resolution
+ * @brief Lunar push-button behavior and semantic activation
  * @ingroup LunarNavigationControls
  */
 
@@ -64,15 +63,6 @@ ELunarUIActionResult ULunarButton::NativeHandleLunarAction(const FLunarUIActionC
 void ULunarButton::NativeOnLunarActivated()
 {
 	Super::NativeOnLunarActivated();
-	OnClicked.Broadcast();
-}
-
-bool ULunarButton::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	return LunarStyleResolver::ResolveButtonCommonStyle(
-		StyleAsset,
-		GetLunarVisualState(),
-		StyleOverrides,
-		OutStyle,
-		&OutError);
+	BP_OnLunarClicked();
+	OnClicked.Broadcast(this);
 }

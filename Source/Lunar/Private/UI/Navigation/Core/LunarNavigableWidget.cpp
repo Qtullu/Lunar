@@ -2,98 +2,34 @@
 
 /**
  * @file LunarNavigableWidget.cpp
- * @brief Implements common Lunar control input, style, prompt, feedback, focus, and accessibility behavior.
+ * @brief Implements common Lunar control input, state publication, prompt, feedback, focus, and accessibility behavior.
  * @ingroup LunarNavigationCore
  */
 
 #include "UI/Navigation/Core/LunarNavigableWidget.h"
 
 #include "Application/SlateApplicationBase.h"
-#include "Blueprint/WidgetTree.h"
 #include "Components/EditableText.h"
 #include "Components/EditableTextBox.h"
 #include "Components/MultiLineEditableText.h"
 #include "Components/MultiLineEditableTextBox.h"
 #include "Components/PanelWidget.h"
-#include "Components/TextBlock.h"
 #include "Engine/LocalPlayer.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
-#include "Kismet/KismetMathLibrary.h"
 #include "Settings/LunarSettings.h"
-#include "Styling/StyleDefaults.h"
-#include "Styling/WidgetStyle.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
+#include "UI/Navigation/Data/LunarUIHapticFeedbackAsset.h"
+#include "UI/Navigation/Data/LunarUISoundFeedbackAsset.h"
 #include "UI/Navigation/Prompts/LunarInputPromptReceiver.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
-#include "UI/Navigation/Styles/LunarWidgetStyleAsset.h"
 #include "UI/Navigation/Types/LunarGameplayTags.h"
 #include "Widgets/Accessibility/SlateAccessibleMessageHandler.h"
-#include "Widgets/Images/SImage.h"
-#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/SWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLunarNavigableWidget, Log, All);
-
-/**
- * @brief Caches the inherited Slate foreground used to materialize semantic FSlateColor values.
- * @ingroup LunarNavigationCore
- */
-class SLunarContentStyleLayer : public SBorder
-{
-public:
-	/** @param Color Semantic color to resolve. @return Linear color resolved against the incoming parent style. */
-	FLinearColor ResolveAgainstInheritedStyle(const FSlateColor& Color) const
-	{
-		return Color.GetColor(CachedIncomingWidgetStyle);
-	}
-
-	/** @param Color Semantic color to resolve. @return Linear color resolved as a child of this layer. */
-	FLinearColor ResolveForChild(const FSlateColor& Color) const
-	{
-		FWidgetStyle ChildStyle = CachedIncomingWidgetStyle;
-		ChildStyle.SetForegroundColor(GetForegroundColor().GetColor(CachedIncomingWidgetStyle));
-		return Color.GetColor(ChildStyle);
-	}
-
-	/**
-	 * @brief Captures the incoming widget style before painting the border and descendants.
-	 * @param Args Slate paint arguments.
-	 * @param AllottedGeometry Geometry allocated to this widget.
-	 * @param MyCullingRect Active culling rectangle.
-	 * @param OutDrawElements Draw-element output list.
-	 * @param LayerId Starting layer identifier.
-	 * @param InWidgetStyle Inherited parent style.
-	 * @param bParentEnabled Whether the parent hierarchy is enabled.
-	 * @return Highest layer used while painting.
-	 */
-	virtual int32 OnPaint(
-		const FPaintArgs& Args,
-		const FGeometry& AllottedGeometry,
-		const FSlateRect& MyCullingRect,
-		FSlateWindowElementList& OutDrawElements,
-		const int32 LayerId,
-		const FWidgetStyle& InWidgetStyle,
-		const bool bParentEnabled) const override
-	{
-		CachedIncomingWidgetStyle = InWidgetStyle;
-		return SBorder::OnPaint(
-			Args,
-			AllottedGeometry,
-			MyCullingRect,
-			OutDrawElements,
-			LayerId,
-			InWidgetStyle,
-			bParentEnabled);
-	}
-
-private:
-	/** Most recent inherited style observed during paint. */
-	mutable FWidgetStyle CachedIncomingWidgetStyle;
-};
 
 /** @brief Private implementation helpers for the common navigable control base. */
 namespace LunarNavigableWidget_Private
@@ -150,20 +86,11 @@ namespace LunarNavigableWidget_Private
 		return false;
 	}
 
-	/** @param Color Slate color to materialize. @param Foreground Explicit inherited foreground. @return Resolved linear color. */
-	FLinearColor ResolveSlateColor(
-		const FSlateColor& Color,
-		const FLinearColor& Foreground = FLinearColor::White)
-	{
-		FWidgetStyle WidgetStyle;
-		WidgetStyle.SetForegroundColor(Foreground);
-		return Color.GetColor(WidgetStyle);
-	}
-
-	/** @param Override Per-widget sound override. @param GlobalSound Project default. @return Effective sound spec, or nullptr when disabled or unset. */
+	/** @param Override Per-event source mode. @param GlobalSound Project default. @param DataAssetSound Matching reusable asset entry, or nullptr. @return Effective sound spec, or nullptr when disabled or unset. */
 	const FLunarUISoundSpec* ResolveSound(
 		const FLunarUISoundOverride& Override,
-		const FLunarUISoundSpec& GlobalSound)
+		const FLunarUISoundSpec& GlobalSound,
+		const FLunarUISoundSpec* DataAssetSound)
 	{
 		switch (Override.Mode)
 		{
@@ -171,16 +98,19 @@ namespace LunarNavigableWidget_Private
 			return nullptr;
 		case ELunarFeedbackOverrideMode::Custom:
 			return Override.CustomSound.Sound ? &Override.CustomSound : nullptr;
+		case ELunarFeedbackOverrideMode::UseDataAsset:
+			return DataAssetSound && DataAssetSound->Sound ? DataAssetSound : nullptr;
 		case ELunarFeedbackOverrideMode::UseGlobal:
 		default:
 			return GlobalSound.Sound ? &GlobalSound : nullptr;
 		}
 	}
 
-	/** @param Override Per-widget haptic override. @param GlobalHaptic Project default. @return Effective haptic spec, or nullptr when disabled or unset. */
+	/** @param Override Per-event source mode. @param GlobalHaptic Project default. @param DataAssetHaptic Matching reusable asset entry, or nullptr. @return Effective haptic spec, or nullptr when disabled or unset. */
 	const FLunarUIHapticSpec* ResolveHaptic(
 		const FLunarUIHapticOverride& Override,
-		const FLunarUIHapticSpec& GlobalHaptic)
+		const FLunarUIHapticSpec& GlobalHaptic,
+		const FLunarUIHapticSpec* DataAssetHaptic)
 	{
 		switch (Override.Mode)
 		{
@@ -188,12 +118,13 @@ namespace LunarNavigableWidget_Private
 			return nullptr;
 		case ELunarFeedbackOverrideMode::Custom:
 			return Override.CustomHaptic.Effect ? &Override.CustomHaptic : nullptr;
+		case ELunarFeedbackOverrideMode::UseDataAsset:
+			return DataAssetHaptic && DataAssetHaptic->Effect ? DataAssetHaptic : nullptr;
 		case ELunarFeedbackOverrideMode::UseGlobal:
 		default:
 			return GlobalHaptic.Effect ? &GlobalHaptic : nullptr;
 		}
 	}
-
 	/** @param A First visual state. @param B Second visual state. @return True when every state component is equal. */
 	bool VisualStatesEqual(const FLunarUIVisualState& A, const FLunarUIVisualState& B)
 	{
@@ -232,86 +163,44 @@ ULunarNavigableWidget::ULunarNavigableWidget(const FObjectInitializer& ObjectIni
 	CurrentVisualState.ValueStateTag = CurrentValueStateTag;
 }
 
+#if WITH_EDITOR
+const FText ULunarNavigableWidget::GetPaletteCategory()
+{
+	return NSLOCTEXT("LunarNavigationPalette", "Category", "Lunar Navigation");
+}
+#endif
+
 TSharedRef<SWidget> ULunarNavigableWidget::RebuildWidget()
 {
 	// Serialized Blueprint defaults must not disable the native focus bridge that Lunar owns internally.
 	SetIsFocusable(true);
+	// Lunar owns logical availability. Slate stays enabled so it neither adds DisabledEffect nor suppresses hover.
+	UWidget::SetIsEnabled(true);
 	DetachInputPromptReceiver();
 	const TSharedRef<SWidget> UserContent = Super::RebuildWidget();
-
-	SAssignNew(LunarBackgroundImage, SImage)
-		.Image(FStyleDefaults::GetNoBrush())
-		.DesiredSizeOverride(TOptional<FVector2D>(FVector2D::ZeroVector))
-		.Visibility(EVisibility::HitTestInvisible);
-
-	SAssignNew(LunarForegroundImage, SImage)
-		.Image(FStyleDefaults::GetNoBrush())
-		.DesiredSizeOverride(TOptional<FVector2D>(FVector2D::ZeroVector))
-		.Visibility(EVisibility::HitTestInvisible);
 
 	SAssignNew(LunarInputPromptHost, SBox)
 		.Visibility(EVisibility::Collapsed);
 	AttachInputPromptReceiver();
 	UpdateInputPromptHostVisibility();
 
-	SAssignNew(LunarContentStyleLayer, SLunarContentStyleLayer)
-		.BorderImage(FStyleDefaults::GetNoBrush())
-		.Padding(0.0f)
-		[
-			UserContent
-		];
-
-	TSharedRef<SOverlay> ContentPresentation = SNew(SOverlay);
+	TSharedRef<SOverlay> Presentation = SNew(SOverlay);
 	if (const TSharedPtr<SWidget> SpecializedPresentation = RebuildLunarSpecializedPresentation())
 	{
-		ContentPresentation->AddSlot()
+		Presentation->AddSlot()
 		[
 			SpecializedPresentation.ToSharedRef()
 		];
 	}
-	ContentPresentation->AddSlot()
+	Presentation->AddSlot()
 	[
-		LunarContentStyleLayer.ToSharedRef()
+		UserContent
 	];
-
-	SAssignNew(LunarBorderLayer, SBorder)
-		.BorderImage(FStyleDefaults::GetNoBrush())
-		.Padding(0.0f)
-		[
-			ContentPresentation
-		];
-
-	TSharedRef<SOverlay> PresentationOverlay = SNew(SOverlay)
-		+ SOverlay::Slot()
-		[
-			LunarBackgroundImage.ToSharedRef()
-		]
-		+ SOverlay::Slot()
-		[
-			LunarBorderLayer.ToSharedRef()
-		]
-		+ SOverlay::Slot()
-		[
-			LunarForegroundImage.ToSharedRef()
-		]
-		+ SOverlay::Slot()
-		[
-			LunarInputPromptHost.ToSharedRef()
-		];
-
-	SAssignNew(LunarOuterPaddingLayer, SBorder)
-		.BorderImage(FStyleDefaults::GetNoBrush())
-		.Padding(0.0f)
-		[
-			PresentationOverlay
-		];
-
-	SAssignNew(LunarStyleSizeBox, SBox)
-		[
-			LunarOuterPaddingLayer.ToSharedRef()
-		];
-
-	return LunarStyleSizeBox.ToSharedRef();
+	Presentation->AddSlot()
+	[
+		LunarInputPromptHost.ToSharedRef()
+	];
+	return Presentation;
 }
 
 TSharedPtr<SWidget> ULunarNavigableWidget::RebuildLunarSpecializedPresentation()
@@ -322,14 +211,9 @@ TSharedPtr<SWidget> ULunarNavigableWidget::RebuildLunarSpecializedPresentation()
 void ULunarNavigableWidget::ReleaseSlateResources(const bool bReleaseChildren)
 {
 	DetachInputPromptReceiver();
-	LunarStyleSizeBox.Reset();
-	LunarOuterPaddingLayer.Reset();
-	LunarBorderLayer.Reset();
-	LunarContentStyleLayer.Reset();
-	LunarBackgroundImage.Reset();
-	LunarForegroundImage.Reset();
 	LunarInputPromptHost.Reset();
 	bPromptDirty = true;
+	bHasPublishedVisualState = false;
 	Super::ReleaseSlateResources(bReleaseChildren);
 }
 
@@ -337,6 +221,8 @@ void ULunarNavigableWidget::SynchronizeProperties()
 {
 	SetIsFocusable(true);
 	Super::SynchronizeProperties();
+	// Super may reapply a serialized native bIsEnabled value. Keep only Lunar's logical state authoritative.
+	UWidget::SetIsEnabled(true);
 	SynchronizeLunarAccessibility();
 	RefreshVisualState();
 	InvalidateInputPrompt();
@@ -373,6 +259,7 @@ void ULunarNavigableWidget::NativeDestruct()
 		bNavigationPressed = false;
 		NativeOnLunarReleased();
 	}
+	ResetLunarHoldTracking();
 
 	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
 	{
@@ -412,6 +299,13 @@ void ULunarNavigableWidget::NativeTick(const FGeometry& MyGeometry, const float 
 		SynchronizeLunarAccessibility();
 		RefreshVisualState();
 	}
+	if ((bPointerHovered || bPointerPressed) && !CanReceiveLunarPointerPresentation())
+	{
+		CancelPointerPress();
+		bPointerHovered = false;
+		RefreshVisualState();
+		UpdateInputPromptHostVisibility();
+	}
 
 	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
 	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
@@ -424,50 +318,9 @@ void ULunarNavigableWidget::NativeTick(const FGeometry& MyGeometry, const float 
 	{
 		ProcessInputPromptUpdate();
 	}
+	AdvanceLunarHoldTracking(InDeltaTime);
 
-	if (!bStyleTransitionActive)
-	{
-		return;
-	}
-	if (bReduceMotion)
-	{
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		bUseCapturedTextTransitionSource = false;
-		ApplyDisplayedStyle(LogicalTargetCommonStyle);
-		return;
-	}
 
-	const float TransitionDelta = FMath::Max(0.0f, InDeltaTime);
-	StyleTransitionElapsed += bStyleTransitionReversing ? -TransitionDelta : TransitionDelta;
-	StyleTransitionElapsed = FMath::Clamp(StyleTransitionElapsed, 0.0f, StyleTransitionDuration);
-	const float Alpha = StyleTransitionDuration > 0.0f
-		? FMath::Clamp(StyleTransitionElapsed / StyleTransitionDuration, 0.0f, 1.0f)
-		: 1.0f;
-	const float EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-		0.0,
-		1.0,
-		Alpha,
-		TransitionTargetCommonStyle.Transition.Easing));
-	FLunarCommonStylePatch TransitionSnapshot = LunarStyleResolver::InterpolateCommonStylePatch(
-		TransitionSourceCommonStyle,
-		TransitionTargetCommonStyle,
-		EasedAlpha);
-	if (bStyleTransitionReversing)
-	{
-		LunarStyleResolver::ApplyCommonDiscreteFields(TransitionSnapshot, TransitionSourceCommonStyle);
-	}
-	ApplyDisplayedStyle(TransitionSnapshot);
-
-	const bool bTransitionFinished = bStyleTransitionReversing ? Alpha <= 0.0f : Alpha >= 1.0f;
-	if (bTransitionFinished)
-	{
-		ApplyDisplayedStyle(bStyleTransitionReversing ? TransitionSourceCommonStyle : TransitionTargetCommonStyle);
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		bUseCapturedTextTransitionSource = false;
-		ApplyResolvedCommonStyle(DisplayedCommonStyle);
-	}
 }
 
 bool ULunarNavigableWidget::RequestLunarSelection()
@@ -475,6 +328,15 @@ bool ULunarNavigableWidget::RequestLunarSelection()
 	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
 	{
 		return NavigationSubsystem->SetSelectedWidget(this);
+	}
+	return false;
+}
+
+bool ULunarNavigableWidget::RequestLunarPointerSelection()
+{
+	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
+	{
+		return NavigationSubsystem->SetSelectedWidgetFromPointer(this);
 	}
 	return false;
 }
@@ -487,41 +349,70 @@ bool ULunarNavigableWidget::IsLunarSelected() const
 bool ULunarNavigableWidget::CanReceiveLunarSelection() const
 {
 	if (!bCanReceiveLunarSelection
-		|| !IsVisible()
-		|| (!GetIsEnabled() && !bCanReceiveSelectionWhenDisabled)
+		|| !IsLunarHierarchyAvailable(bCanReceiveSelectionWhenDisabled)
 		|| HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
 	{
 		return false;
 	}
-
-	const UWidget* Current = this;
-	TSet<TObjectKey<UWidget>> Visited;
-	while (Current && !Visited.Contains(TObjectKey<UWidget>(const_cast<UWidget*>(Current))))
-	{
-		Visited.Add(TObjectKey<UWidget>(const_cast<UWidget*>(Current)));
-		if (!Current->IsVisible() || (Current != this && !Current->GetIsEnabled()))
-		{
-			return false;
-		}
-
-		if (const UWidget* Parent = Current->GetParent())
-		{
-			Current = Parent;
-			continue;
-		}
-
-		const UWidget* OuterWidget = nullptr;
-		for (const UObject* Outer = Current->GetOuter(); Outer; Outer = Outer->GetOuter())
-		{
-			if (const UWidget* Candidate = Cast<UWidget>(Outer))
-			{
-				OuterWidget = Candidate;
-				break;
-			}
-		}
-		Current = OuterWidget;
-	}
 	return true;
+}
+
+bool ULunarNavigableWidget::IsNavigationInputAllowed(const ELunarInputDeviceType InputDevice) const
+{
+	switch (InputDevice)
+	{
+	case ELunarInputDeviceType::KeyboardMouse:
+		return bAllowKeyboardInput;
+	case ELunarInputDeviceType::Gamepad:
+		return bAllowGamepadInput;
+	case ELunarInputDeviceType::Touch:
+		return bAllowTouchInput;
+	case ELunarInputDeviceType::Unknown:
+	default:
+		return true;
+	}
+}
+
+void ULunarNavigableWidget::SetLunarEnabled(const bool bEnabled)
+{
+	// Never expose the logical disabled state to Slate; Slate would dim and remove this widget from pointer routing.
+	UWidget::SetIsEnabled(true);
+	if (bLunarEnabled == bEnabled)
+	{
+		return;
+	}
+
+	bLunarEnabled = bEnabled;
+	if (!bLunarEnabled)
+	{
+		CancelPointerPress();
+		if (bNavigationPressed)
+		{
+			bNavigationPressed = false;
+			NativeOnLunarReleased();
+		}
+		bRejectedNavigationPressed = false;
+		ResetLunarHoldTracking();
+	}
+	if (!CanReceiveLunarPointerPresentation())
+	{
+		bPointerHovered = false;
+	}
+
+	bLastKnownEffectivelyInteractive = IsEffectivelyInteractive();
+	SynchronizeLunarAccessibility();
+	InvalidateInputPrompt();
+	RefreshVisualState();
+	UpdateInputPromptHostVisibility();
+	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
+	{
+		NavigationSubsystem->NotifyNavigableWidgetConfigurationChanged(this, false);
+	}
+}
+
+void ULunarNavigableWidget::SetIsEnabled(const bool bInIsEnabled)
+{
+	SetLunarEnabled(bInIsEnabled);
 }
 
 void ULunarNavigableWidget::ActivateLunarWidget()
@@ -541,6 +432,10 @@ bool ULunarNavigableWidget::CanHandleLunarAction(const FLunarUIActionContext& Ac
 
 ELunarUIActionResult ULunarNavigableWidget::HandleLunarAction(const FLunarUIActionContext& ActionContext)
 {
+	if (ActionContext.InputEvent == IE_Released && bRejectedNavigationPressed)
+	{
+		bRejectedNavigationPressed = false;
+	}
 	if (ActionContext.InputEvent == IE_Released && bNavigationPressed)
 	{
 		bNavigationPressed = false;
@@ -553,21 +448,13 @@ ELunarUIActionResult ULunarNavigableWidget::HandleLunarAction(const FLunarUIActi
 		bNavigationPressed = true;
 		NativeOnLunarPressed();
 	}
+	else if (Result == ELunarUIActionResult::Rejected && ActionContext.InputEvent == IE_Pressed)
+	{
+		// Rejected input receives only a pressed visual; it never starts the Pressed/Hold lifecycle.
+		bRejectedNavigationPressed = true;
+	}
 	RefreshVisualState();
 	return Result;
-}
-
-void ULunarNavigableWidget::SetStyleAsset(ULunarWidgetStyleAsset* NewStyleAsset)
-{
-	if (StyleAsset != NewStyleAsset)
-	{
-		StyleAsset = NewStyleAsset;
-		RefreshVisualState();
-		if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
-		{
-			NavigationSubsystem->NotifyNavigableWidgetConfigurationChanged(this, false);
-		}
-	}
 }
 
 void ULunarNavigableWidget::RefreshVisualState()
@@ -578,53 +465,68 @@ void ULunarNavigableWidget::RefreshVisualState()
 	}
 
 	FLunarUIVisualState NewVisualState;
-	NewVisualState.ValueStateTag = IsEffectivelyInteractive()
-		? CurrentValueStateTag
-		: LunarGameplayTags::UI_State_Value_Disabled.GetTag();
+	bool bIsDesignerPreview = false;
 
-	const ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
-	const bool bPointerPresentation = NavigationSubsystem && NavigationSubsystem->IsPointerPresentationActive();
-	NewVisualState.InputDevice = NavigationSubsystem
-		? NavigationSubsystem->GetLastInputDevice()
-		: ELunarInputDeviceType::Unknown;
-	if (const ULunarSettings* Settings = GetDefault<ULunarSettings>())
-	{
-		NewVisualState.bReduceMotion = Settings->Navigation.Accessibility.bReduceMotion;
-	}
+#if WITH_EDITOR
+	bIsDesignerPreview = IsDesignTime();
+#endif
 
-	if (bPointerPresentation)
+#if WITH_EDITORONLY_DATA
+	if (bIsDesignerPreview && PreviewMode == ELunarVisualStatePreviewMode::Custom)
 	{
-		NewVisualState.InteractionState = bPointerPressed
-			? ELunarUIInteractionState::PointerPressed
-			: (bPointerHovered ? ELunarUIInteractionState::PointerHovered : ELunarUIInteractionState::PointerNormal);
+		NewVisualState = PreviewVisualState;
 	}
 	else
+#endif
 	{
-		NewVisualState.InteractionState = bNavigationPressed && bLunarSelected
-			? ELunarUIInteractionState::NavigationPressed
-			: (bLunarSelected ? ELunarUIInteractionState::NavigationSelected : ELunarUIInteractionState::NavigationNormal);
+		NewVisualState.ValueStateTag = IsEffectivelyInteractive()
+			? CurrentValueStateTag
+			: LunarGameplayTags::UI_State_Value_Disabled.GetTag();
+
+		const ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
+		const bool bPointerPresentation = NavigationSubsystem && NavigationSubsystem->IsPointerPresentationActive();
+		NewVisualState.InputDevice = NavigationSubsystem
+			? NavigationSubsystem->GetLastInputDevice()
+			: ELunarInputDeviceType::Unknown;
+		if (const ULunarSettings* Settings = GetDefault<ULunarSettings>())
+		{
+			NewVisualState.bReduceMotion = Settings->Navigation.Accessibility.bReduceMotion;
+		}
+
+		if (bPointerPresentation)
+		{
+			NewVisualState.InteractionState = bPointerPressed
+				? ELunarUIInteractionState::PointerPressed
+				: (bPointerHovered ? ELunarUIInteractionState::PointerHovered : ELunarUIInteractionState::PointerNormal);
+		}
+		else
+		{
+			const bool bNavigationPresentationAllowed = IsNavigationInputAllowed(NewVisualState.InputDevice);
+			NewVisualState.InteractionState = bNavigationPresentationAllowed
+				&& (bNavigationPressed || bRejectedNavigationPressed)
+				&& bLunarSelected
+				? ELunarUIInteractionState::NavigationPressed
+				: (bNavigationPresentationAllowed && bLunarSelected
+					? ELunarUIInteractionState::NavigationSelected
+					: ELunarUIInteractionState::NavigationNormal);
+		}
 	}
 
-	const bool bStateChanged = !LunarNavigableWidget_Private::VisualStatesEqual(CurrentVisualState, NewVisualState);
 	CurrentVisualState = NewVisualState;
-
-	FLunarCommonStylePatch ResolvedStyle;
-	FString StyleError;
-	if (ResolveCommonStylePatch(ResolvedStyle, StyleError))
+	const bool bStateChanged = !bHasPublishedVisualState
+		|| !LunarNavigableWidget_Private::VisualStatesEqual(LastPublishedVisualState, NewVisualState);
+	if (!bStateChanged)
 	{
-		ApplyStyleTarget(ResolvedStyle);
-	}
-	else if (!StyleError.IsEmpty())
-	{
-		UE_LOG(LogLunarNavigableWidget, Error, TEXT("%s: %s"), *GetPathName(), *StyleError);
+		return;
 	}
 
-	if (bStateChanged)
-	{
-		NativeOnLunarVisualStateChanged(CurrentVisualState);
-	}
+	const FLunarUIVisualState PreviousState = bHasPublishedVisualState
+		? LastPublishedVisualState
+		: NewVisualState;
+	LastPublishedVisualState = NewVisualState;
+	bHasPublishedVisualState = true;
+	NativeOnLunarVisualStateChanged(PreviousState, NewVisualState, bIsDesignerPreview);
 }
-
 void ULunarNavigableWidget::SetPromptActions(const TArray<FLunarPromptActionRequest>& NewPromptActions)
 {
 	PromptActions.Reset();
@@ -860,8 +762,15 @@ void ULunarNavigableWidget::UpdateInputPromptHostVisibility()
 		switch (PromptVisibilityPolicy)
 		{
 		case ELunarPromptVisibilityPolicy::WhenSelected:
-			bShowHost = bLunarSelected;
+		{
+			const ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
+			const bool bPointerPresentationActive = NavigationSubsystem
+				&& NavigationSubsystem->IsPointerPresentationActive();
+			bShowHost = bPointerPresentationActive
+				? bPointerHovered
+				: bLunarSelected;
 			break;
+		}
 		case ELunarPromptVisibilityPolicy::Always:
 		case ELunarPromptVisibilityPolicy::Manual:
 			break;
@@ -942,11 +851,12 @@ bool ULunarNavigableWidget::GetLunarRepeatSettingsOverride(
 void ULunarNavigableWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
-	if (bCanInteractWithPointer && !InMouseEvent.IsTouchEvent())
+	if (CanReceiveLunarPointerPresentation() && !InMouseEvent.IsTouchEvent())
 	{
 		bPointerHovered = true;
 		PlayPointerHoveredFeedback();
 		RefreshVisualState();
+		UpdateInputPromptHostVisibility();
 	}
 }
 
@@ -954,6 +864,7 @@ void ULunarNavigableWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent
 {
 	bPointerHovered = false;
 	RefreshVisualState();
+	UpdateInputPromptHostVisibility();
 	Super::NativeOnMouseLeave(InMouseEvent);
 }
 
@@ -964,15 +875,57 @@ FReply ULunarNavigableWidget::NativeOnMouseButtonDown(const FGeometry& InGeometr
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
-	if (bCanReceiveLunarSelection)
+	const bool bInteractivePress = IsEffectivelyInteractive();
+	const bool bInspectableDisabledPress = !bInteractivePress
+		&& CanInspectDisabledControlWithDirectInput(bCanInteractWithPointer);
+	if (bCanReceiveLunarSelection
+		&& (bInteractivePress || bInspectableDisabledPress)
+		&& !RequestLunarPointerSelection())
 	{
-		RequestLunarSelection();
+		NativeOnLunarRejected();
+		return FReply::Handled();
+	}
+	if (!bInteractivePress)
+	{
+		// A disabled control cannot own a successful press lifecycle. Reject the
+		// attempt immediately because disabled Slate paths are not guaranteed to
+		// deliver the matching release after preview handling or capture changes.
+		NativeOnLunarRejected();
+		return FReply::Handled();
 	}
 	bPointerPressed = true;
 	bPointerActivationEligible = true;
+	bPointerPressRejected = false;
 	PointerPressScreenPosition = InMouseEvent.GetScreenSpacePosition();
 	NativeOnLunarPressed();
 	return FReply::Handled().CaptureMouse(TakeWidget());
+}
+
+FReply ULunarNavigableWidget::NativeOnPreviewMouseButtonDown(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	if (bCanInteractWithPointer
+		&& InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton
+		&& !IsEffectivelyInteractive())
+	{
+		return NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+	return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply ULunarNavigableWidget::NativeOnMouseButtonDoubleClick(
+	const FGeometry& InGeometry,
+	const FPointerEvent& InMouseEvent)
+{
+	if (!bCanInteractWithPointer || InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return Super::NativeOnMouseButtonDoubleClick(InGeometry, InMouseEvent);
+	}
+
+	// Slate routes a rapid second press here instead of through MouseButtonDown.
+	// Treat it as the next ordinary press so every completed click activates exactly once.
+	return NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 FReply ULunarNavigableWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -984,12 +937,25 @@ FReply ULunarNavigableWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry,
 
 	const bool bActivate = bPointerActivationEligible
 		&& InGeometry.IsUnderLocation(InMouseEvent.GetScreenSpacePosition());
+	const bool bRejectedPress = bPointerPressRejected;
 	bPointerPressed = false;
 	bPointerActivationEligible = false;
-	NativeOnLunarReleased();
-	if (bActivate)
+	bPointerPressRejected = false;
+	if (bRejectedPress)
 	{
-		ActivateLunarWidget();
+		RefreshVisualState();
+		if (bActivate)
+		{
+			NativeOnLunarRejected();
+		}
+	}
+	else
+	{
+		NativeOnLunarReleased();
+		if (bActivate)
+		{
+			ActivateLunarWidget();
+		}
 	}
 	return FReply::Handled().ReleaseMouseCapture();
 }
@@ -998,21 +964,48 @@ void ULunarNavigableWidget::NativeOnMouseCaptureLost(const FCaptureLostEvent& Ca
 {
 	if (bPointerPressed)
 	{
+		const bool bRejectedPress = bPointerPressRejected;
 		bPointerPressed = false;
 		bPointerActivationEligible = false;
-		NativeOnLunarReleased();
+		bPointerPressRejected = false;
+		if (bRejectedPress)
+		{
+			RefreshVisualState();
+		}
+		else
+		{
+			NativeOnLunarReleased();
+		}
 	}
 	Super::NativeOnMouseCaptureLost(CaptureLostEvent);
 }
 
 FReply ULunarNavigableWidget::NativeOnTouchStarted(const FGeometry& InGeometry, const FPointerEvent& InGestureEvent)
 {
-	if (!bCanInteractWithPointer || !InGestureEvent.IsTouchEvent() || InGestureEvent.GetPointerIndex() != 0)
+	if (!bAllowTouchInput || !InGestureEvent.IsTouchEvent() || InGestureEvent.GetPointerIndex() != 0)
 	{
 		return Super::NativeOnTouchStarted(InGeometry, InGestureEvent);
 	}
+	const bool bInteractivePress = IsEffectivelyInteractive();
+	const bool bInspectableDisabledPress = !bInteractivePress
+		&& CanInspectDisabledControlWithDirectInput(bAllowTouchInput);
+	if (bCanReceiveLunarSelection
+		&& (bInteractivePress || bInspectableDisabledPress)
+		&& !RequestLunarPointerSelection())
+	{
+		NativeOnLunarRejected();
+		return FReply::Handled();
+	}
+	if (!bInteractivePress)
+	{
+		// Mirror pointer rejection: disabled touch attempts publish one rejection
+		// without beginning a press, release, or activation lifecycle.
+		NativeOnLunarRejected();
+		return FReply::Handled();
+	}
 	bPointerPressed = true;
 	bPointerActivationEligible = true;
+	bPointerPressRejected = false;
 	PointerPressScreenPosition = InGestureEvent.GetScreenSpacePosition();
 	NativeOnLunarPressed();
 	return FReply::Handled().CaptureMouse(TakeWidget());
@@ -1037,16 +1030,25 @@ FReply ULunarNavigableWidget::NativeOnTouchEnded(const FGeometry& InGeometry, co
 	}
 	const bool bActivate = bPointerActivationEligible
 		&& InGeometry.IsUnderLocation(InGestureEvent.GetScreenSpacePosition());
+	const bool bRejectedPress = bPointerPressRejected;
 	bPointerPressed = false;
 	bPointerActivationEligible = false;
-	NativeOnLunarReleased();
-	if (bActivate)
+	bPointerPressRejected = false;
+	if (bRejectedPress)
 	{
-		if (bCanReceiveLunarSelection)
+		RefreshVisualState();
+		if (bActivate)
 		{
-			RequestLunarSelection();
+			NativeOnLunarRejected();
 		}
-		ActivateLunarWidget();
+	}
+	else
+	{
+		NativeOnLunarReleased();
+		if (bActivate)
+		{
+			ActivateLunarWidget();
+		}
 	}
 	return FReply::Handled().ReleaseMouseCapture();
 }
@@ -1096,12 +1098,13 @@ void ULunarNavigableWidget::NativeOnLunarSelected()
 	RefreshVisualState();
 	InvalidateInputPrompt();
 	BP_OnLunarSelected();
-	OnLunarSelected.Broadcast();
+	OnLunarSelected.Broadcast(this);
 	PlaySelectedFeedback();
 }
 
 void ULunarNavigableWidget::NativeOnLunarUnselected()
 {
+	bRejectedNavigationPressed = false;
 	if (bNavigationPressed)
 	{
 		bNavigationPressed = false;
@@ -1111,29 +1114,41 @@ void ULunarNavigableWidget::NativeOnLunarUnselected()
 	RefreshVisualState();
 	InvalidateInputPrompt();
 	BP_OnLunarUnselected();
-	OnLunarUnselected.Broadcast();
+	OnLunarUnselected.Broadcast(this);
 }
 
 void ULunarNavigableWidget::NativeOnLunarPressed()
 {
 	RefreshVisualState();
 	BP_OnLunarPressed();
-	OnLunarPressed.Broadcast();
+	OnLunarPressed.Broadcast(this);
 	PlayPressedFeedback();
+	BeginLunarHoldTracking();
+}
+
+void ULunarNavigableWidget::NativeOnLunarHoldProgress(
+	const float HoldSeconds,
+	const float PressedSeconds,
+	const float DelayLeft,
+	const bool bDelayElapsed)
+{
+	BP_OnLunarHoldProgress(HoldSeconds, PressedSeconds, DelayLeft, bDelayElapsed);
+	OnLunarHoldProgress.Broadcast(this, HoldSeconds, PressedSeconds, DelayLeft, bDelayElapsed);
 }
 
 void ULunarNavigableWidget::NativeOnLunarReleased()
 {
+	ResetLunarHoldTracking();
 	RefreshVisualState();
 	BP_OnLunarReleased();
-	OnLunarReleased.Broadcast();
+	OnLunarReleased.Broadcast(this);
 }
 
 void ULunarNavigableWidget::NativeOnLunarActivated()
 {
 	BP_OnLunarActivated();
-	OnLunarActivated.Broadcast();
-	PlayActivatedFeedback();
+	OnLunarActivated.Broadcast(this);
+	PlayClickedFeedback();
 #if WITH_ACCESSIBILITY
 	if (FSlateApplication::IsInitialized())
 	{
@@ -1154,7 +1169,7 @@ void ULunarNavigableWidget::NativeOnLunarActivated()
 void ULunarNavigableWidget::NativeOnLunarRejected()
 {
 	BP_OnLunarRejected();
-	OnLunarRejected.Broadcast();
+	OnLunarRejected.Broadcast(this);
 	PlayRejectedFeedback();
 #if WITH_ACCESSIBILITY
 	if (!DisabledReason.IsEmpty() && !IsEffectivelyInteractive() && FSlateApplication::IsInitialized())
@@ -1166,7 +1181,7 @@ void ULunarNavigableWidget::NativeOnLunarRejected()
 					SlateWidget.ToSharedRef(),
 					EAccessibleEvent::Notification,
 					FVariant(),
-					FVariant(DisabledReason.ToString()),
+					FVariant(DisabledReason),
 					LunarNavigableWidget_Private::GetAccessibleUserIndex(this)));
 		}
 	}
@@ -1178,13 +1193,16 @@ void ULunarNavigableWidget::NativeOnLunarInputDeviceChanged(const ELunarInputDev
 	RefreshVisualState();
 	InvalidateInputPrompt();
 	BP_OnLunarInputDeviceChanged(NewInputDevice);
-	OnLunarInputDeviceChanged.Broadcast(NewInputDevice);
+	OnLunarInputDeviceChanged.Broadcast(this, NewInputDevice);
 }
 
-void ULunarNavigableWidget::NativeOnLunarVisualStateChanged(const FLunarUIVisualState& VisualState)
+void ULunarNavigableWidget::NativeOnLunarVisualStateChanged(
+	const FLunarUIVisualState& PreviousState,
+	const FLunarUIVisualState& NewState,
+	const bool bIsDesignerPreview)
 {
-	BP_OnLunarVisualStateChanged(VisualState);
-	OnLunarVisualStateChanged.Broadcast(VisualState);
+	BP_OnLunarVisualStateChanged(PreviousState, NewState, bIsDesignerPreview);
+	OnLunarVisualStateChanged.Broadcast(this, PreviousState, NewState, bIsDesignerPreview);
 }
 
 void ULunarNavigableWidget::NativeOnInputPromptInvalidated()
@@ -1194,267 +1212,6 @@ void ULunarNavigableWidget::NativeOnInputPromptInvalidated()
 FText ULunarNavigableWidget::NativeGetLunarAccessibleValueText() const
 {
 	return FText::GetEmpty();
-}
-
-bool ULunarNavigableWidget::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	OutStyle = FLunarCommonStylePatch();
-	if (StyleAsset)
-	{
-		OutError = FString::Printf(TEXT("Style asset %s is not compatible with abstract navigable widget %s"), *StyleAsset->GetName(), *GetClass()->GetName());
-		return false;
-	}
-	LunarStyleResolver::MergeCommonStylePatch(OutStyle, StyleOverrides);
-	return true;
-}
-
-void ULunarNavigableWidget::EnsureTextBlockStyleBaselines()
-{
-	TextBlockStyleBaselines.RemoveAll([](const FLunarTextBlockStyleBaseline& Baseline)
-	{
-		return !Baseline.TextBlock.IsValid();
-	});
-	if (!WidgetTree)
-	{
-		return;
-	}
-
-	WidgetTree->ForEachWidget([this](UWidget* Widget)
-	{
-		UTextBlock* TextBlock = Cast<UTextBlock>(Widget);
-		if (!TextBlock || TextBlockStyleBaselines.ContainsByPredicate(
-			[TextBlock](const FLunarTextBlockStyleBaseline& Existing)
-			{
-				return Existing.TextBlock.Get() == TextBlock;
-			}))
-		{
-			return;
-		}
-
-		FLunarTextBlockStyleBaseline& Baseline = TextBlockStyleBaselines.AddDefaulted_GetRef();
-		Baseline.TextBlock = TextBlock;
-		Baseline.ColorAndOpacity = TextBlock->GetColorAndOpacity();
-		Baseline.Font = TextBlock->GetFont();
-		Baseline.ShadowColorAndOpacity = TextBlock->GetShadowColorAndOpacity();
-		Baseline.ShadowOffset = TextBlock->GetShadowOffset();
-	});
-}
-
-void ULunarNavigableWidget::EnsureStyleBaseline()
-{
-	EnsureTextBlockStyleBaselines();
-	if (bHasStyleBaseline)
-	{
-		return;
-	}
-
-#define LUNAR_ENABLE_COMMON_BASELINE(FieldName) StyleBaselineCommonStyle.bOverride##FieldName = true
-	LUNAR_ENABLE_COMMON_BASELINE(BackgroundBrush);
-	LUNAR_ENABLE_COMMON_BASELINE(BorderBrush);
-	LUNAR_ENABLE_COMMON_BASELINE(ForegroundBrush);
-	LUNAR_ENABLE_COMMON_BASELINE(BackgroundTint);
-	LUNAR_ENABLE_COMMON_BASELINE(ContentColor);
-	LUNAR_ENABLE_COMMON_BASELINE(TextColor);
-	LUNAR_ENABLE_COMMON_BASELINE(Font);
-	LUNAR_ENABLE_COMMON_BASELINE(TextShadowColor);
-	LUNAR_ENABLE_COMMON_BASELINE(TextShadowOffset);
-	LUNAR_ENABLE_COMMON_BASELINE(Padding);
-	LUNAR_ENABLE_COMMON_BASELINE(ContentPadding);
-	LUNAR_ENABLE_COMMON_BASELINE(Opacity);
-	LUNAR_ENABLE_COMMON_BASELINE(RenderTransform);
-	LUNAR_ENABLE_COMMON_BASELINE(RenderTransformPivot);
-	LUNAR_ENABLE_COMMON_BASELINE(MinDesiredSize);
-	LUNAR_ENABLE_COMMON_BASELINE(MaxDesiredSize);
-#undef LUNAR_ENABLE_COMMON_BASELINE
-
-	StyleBaselineCommonStyle.BackgroundBrush = *FStyleDefaults::GetNoBrush();
-	StyleBaselineCommonStyle.BorderBrush = *FStyleDefaults::GetNoBrush();
-	StyleBaselineCommonStyle.ForegroundBrush = *FStyleDefaults::GetNoBrush();
-	StyleBaselineCommonStyle.BackgroundTint = FLinearColor::White;
-	StyleBaselineCommonStyle.ContentColor = FSlateColor(FLinearColor::White);
-	StyleBaselineCommonStyle.TextColor = FSlateColor(FLinearColor::White);
-	StyleBaselineCommonStyle.TextShadowColor = FLinearColor::Transparent;
-	StyleBaselineCommonStyle.TextShadowOffset = FVector2D::ZeroVector;
-	if (!TextBlockStyleBaselines.IsEmpty())
-	{
-		StyleBaselineCommonStyle.Font = TextBlockStyleBaselines[0].Font;
-		StyleBaselineCommonStyle.TextShadowColor = TextBlockStyleBaselines[0].ShadowColorAndOpacity;
-		StyleBaselineCommonStyle.TextShadowOffset = TextBlockStyleBaselines[0].ShadowOffset;
-	}
-	StyleBaselineCommonStyle.Padding = FMargin(0.0f);
-	StyleBaselineCommonStyle.ContentPadding = FMargin(0.0f);
-	StyleBaselineCommonStyle.Opacity = GetRenderOpacity();
-	StyleBaselineCommonStyle.RenderTransform = GetRenderTransform();
-	StyleBaselineCommonStyle.RenderTransformPivot = GetRenderTransformPivot();
-	StyleBaselineCommonStyle.MinDesiredSize = FVector2D::ZeroVector;
-	StyleBaselineCommonStyle.MaxDesiredSize = FVector2D::ZeroVector;
-	bHasStyleBaseline = true;
-}
-
-FLunarCommonStylePatch ULunarNavigableWidget::MaterializeCommonStyleSnapshot(
-	const FLunarCommonStylePatch& ResolvedStyle) const
-{
-	FLunarCommonStylePatch Result = StyleBaselineCommonStyle;
-	LunarStyleResolver::MergeCommonStylePatch(Result, ResolvedStyle);
-	Result.TextColor = FSlateColor(
-		LunarContentStyleLayer.IsValid()
-			? LunarContentStyleLayer->ResolveAgainstInheritedStyle(Result.TextColor)
-			: LunarNavigableWidget_Private::ResolveSlateColor(
-				Result.TextColor,
-				StyleBaselineCommonStyle.TextColor.GetSpecifiedColor()));
-	Result.ContentColor = FSlateColor(LunarNavigableWidget_Private::ResolveSlateColor(
-		Result.ContentColor,
-		Result.TextColor.GetSpecifiedColor()));
-	Result.Transition = ResolvedStyle.Transition;
-	return Result;
-}
-
-void ULunarNavigableWidget::ApplyResolvedTextStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	EnsureTextBlockStyleBaselines();
-	const bool bInterpolating = bStyleTransitionActive && StyleTransitionDuration > UE_SMALL_NUMBER;
-	float EasedAlpha = 1.0f;
-	if (bInterpolating)
-	{
-		const float Alpha = FMath::Clamp(StyleTransitionElapsed / StyleTransitionDuration, 0.0f, 1.0f);
-		EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-			0.0,
-			1.0,
-			Alpha,
-			TransitionTargetCommonStyle.Transition.Easing));
-	}
-
-	for (const FLunarTextBlockStyleBaseline& Baseline : TextBlockStyleBaselines)
-	{
-		UTextBlock* TextBlock = Baseline.TextBlock.Get();
-		if (!TextBlock)
-		{
-			continue;
-		}
-
-		if (bInterpolating)
-		{
-			const FLinearColor SourceTextColor = bUseCapturedTextTransitionSource
-				? Baseline.CapturedTransitionSourceColor
-				: (TransitionSourceAuthoredCommonStyle.bOverrideTextColor
-					? TransitionSourceCommonStyle.TextColor.GetSpecifiedColor()
-					: LunarNavigableWidget_Private::ResolveSlateColor(
-						Baseline.ColorAndOpacity,
-						TransitionSourceCommonStyle.TextColor.GetSpecifiedColor()));
-			const FLinearColor TargetTextColor = TransitionTargetAuthoredCommonStyle.bOverrideTextColor
-				? TransitionTargetCommonStyle.TextColor.GetSpecifiedColor()
-				: LunarNavigableWidget_Private::ResolveSlateColor(
-					Baseline.ColorAndOpacity,
-					TransitionTargetCommonStyle.TextColor.GetSpecifiedColor());
-			TextBlock->SetColorAndOpacity(FSlateColor(FMath::Lerp(SourceTextColor, TargetTextColor, EasedAlpha)));
-
-			const FLinearColor SourceShadowColor = bUseCapturedTextTransitionSource
-				? Baseline.CapturedTransitionSourceShadowColor
-				: (TransitionSourceAuthoredCommonStyle.bOverrideTextShadowColor
-					? TransitionSourceCommonStyle.TextShadowColor
-					: Baseline.ShadowColorAndOpacity);
-			const FLinearColor TargetShadowColor = TransitionTargetAuthoredCommonStyle.bOverrideTextShadowColor
-				? TransitionTargetCommonStyle.TextShadowColor
-				: Baseline.ShadowColorAndOpacity;
-			TextBlock->SetShadowColorAndOpacity(FMath::Lerp(SourceShadowColor, TargetShadowColor, EasedAlpha));
-
-			const FVector2D SourceShadowOffset = bUseCapturedTextTransitionSource
-				? Baseline.CapturedTransitionSourceShadowOffset
-				: (TransitionSourceAuthoredCommonStyle.bOverrideTextShadowOffset
-					? TransitionSourceCommonStyle.TextShadowOffset
-					: Baseline.ShadowOffset);
-			const FVector2D TargetShadowOffset = TransitionTargetAuthoredCommonStyle.bOverrideTextShadowOffset
-				? TransitionTargetCommonStyle.TextShadowOffset
-				: Baseline.ShadowOffset;
-			TextBlock->SetShadowOffset(FMath::Lerp(SourceShadowOffset, TargetShadowOffset, EasedAlpha));
-		}
-		else
-		{
-			TextBlock->SetColorAndOpacity(
-				LogicalTargetAuthoredCommonStyle.bOverrideTextColor
-					? LogicalTargetAuthoredCommonStyle.TextColor
-					: Baseline.ColorAndOpacity);
-			TextBlock->SetShadowColorAndOpacity(
-				LogicalTargetAuthoredCommonStyle.bOverrideTextShadowColor
-					? LogicalTargetAuthoredCommonStyle.TextShadowColor
-					: Baseline.ShadowColorAndOpacity);
-			TextBlock->SetShadowOffset(
-				LogicalTargetAuthoredCommonStyle.bOverrideTextShadowOffset
-					? LogicalTargetAuthoredCommonStyle.TextShadowOffset
-					: Baseline.ShadowOffset);
-		}
-
-		TextBlock->SetFont(
-			LogicalTargetAuthoredCommonStyle.bOverrideFont
-				? LogicalTargetAuthoredCommonStyle.Font
-				: Baseline.Font);
-	}
-}
-
-void ULunarNavigableWidget::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	EnsureStyleBaseline();
-	if (LunarBackgroundImage.IsValid())
-	{
-		LunarBackgroundImage->SetImage(&DisplayedCommonStyle.BackgroundBrush);
-		LunarBackgroundImage->SetColorAndOpacity(ResolvedStyle.BackgroundTint);
-	}
-	if (LunarForegroundImage.IsValid())
-	{
-		LunarForegroundImage->SetImage(&DisplayedCommonStyle.ForegroundBrush);
-	}
-	if (LunarOuterPaddingLayer.IsValid())
-	{
-		LunarOuterPaddingLayer->SetPadding(ResolvedStyle.Padding);
-	}
-	if (LunarBorderLayer.IsValid())
-	{
-		LunarBorderLayer->SetBorderImage(&DisplayedCommonStyle.BorderBrush);
-		LunarBorderLayer->SetPadding(ResolvedStyle.ContentPadding);
-	}
-	if (LunarContentStyleLayer.IsValid())
-	{
-		const FSlateColor EffectiveTextColor = !bStyleTransitionActive
-			? (LogicalTargetAuthoredCommonStyle.bOverrideTextColor
-				? LogicalTargetAuthoredCommonStyle.TextColor
-				: FSlateColor::UseForeground())
-			: ResolvedStyle.TextColor;
-		const FLinearColor EffectiveForeground =
-			LunarContentStyleLayer->ResolveAgainstInheritedStyle(EffectiveTextColor);
-		const FLinearColor EffectiveContentColor = !bStyleTransitionActive
-			? (LogicalTargetAuthoredCommonStyle.bOverrideContentColor
-				? LunarNavigableWidget_Private::ResolveSlateColor(
-					LogicalTargetAuthoredCommonStyle.ContentColor,
-					EffectiveForeground)
-				: FLinearColor::White)
-			: ResolvedStyle.ContentColor.GetSpecifiedColor();
-		LunarContentStyleLayer->SetColorAndOpacity(EffectiveContentColor);
-		LunarContentStyleLayer->SetForegroundColor(EffectiveTextColor);
-	}
-	if (LunarStyleSizeBox.IsValid())
-	{
-		LunarStyleSizeBox->SetMinDesiredWidth(
-			ResolvedStyle.MinDesiredSize.X > 0.0f
-				? FOptionalSize(ResolvedStyle.MinDesiredSize.X)
-				: FOptionalSize());
-		LunarStyleSizeBox->SetMinDesiredHeight(
-			ResolvedStyle.MinDesiredSize.Y > 0.0f
-				? FOptionalSize(ResolvedStyle.MinDesiredSize.Y)
-				: FOptionalSize());
-		LunarStyleSizeBox->SetMaxDesiredWidth(
-			ResolvedStyle.MaxDesiredSize.X > 0.0f
-				? FOptionalSize(ResolvedStyle.MaxDesiredSize.X)
-				: FOptionalSize());
-		LunarStyleSizeBox->SetMaxDesiredHeight(
-			ResolvedStyle.MaxDesiredSize.Y > 0.0f
-				? FOptionalSize(ResolvedStyle.MaxDesiredSize.Y)
-				: FOptionalSize());
-	}
-
-	SetRenderOpacity(FMath::Clamp(ResolvedStyle.Opacity, 0.0f, 1.0f));
-	SetRenderTransform(ResolvedStyle.RenderTransform);
-	SetRenderTransformPivot(ResolvedStyle.RenderTransformPivot);
-	ApplyResolvedTextStyle(ResolvedStyle);
 }
 
 void ULunarNavigableWidget::NativeOnNativeFocusDelegationStarted(UWidget* NativeFocusWidget)
@@ -1537,14 +1294,68 @@ void ULunarNavigableWidget::NotifyLunarAccessibleValueChanged(const FText& NewVa
 #endif
 }
 
+void ULunarNavigableWidget::BeginLunarHoldTracking()
+{
+	ResetLunarHoldTracking();
+	if ((!bPointerPressed && !bNavigationPressed) || !IsEffectivelyInteractive())
+	{
+		return;
+	}
+
+	bLunarHoldTracking = true;
+	const float DelayLeft = FMath::Max(0.0f, HoldStartDelay);
+	bLunarHoldDelayElapsed = DelayLeft <= 0.0f;
+	NativeOnLunarHoldProgress(0.0f, 0.0f, DelayLeft, bLunarHoldDelayElapsed);
+}
+
+void ULunarNavigableWidget::AdvanceLunarHoldTracking(const float DeltaSeconds)
+{
+	if (!bLunarHoldTracking)
+	{
+		return;
+	}
+	if ((!bPointerPressed && !bNavigationPressed) || !IsEffectivelyInteractive())
+	{
+		ResetLunarHoldTracking();
+		return;
+	}
+
+	const float SafeDeltaSeconds = FMath::Max(0.0f, DeltaSeconds);
+	LunarPressedSeconds += SafeDeltaSeconds;
+	const float DelayLeft = FMath::Max(0.0f, FMath::Max(0.0f, HoldStartDelay) - LunarPressedSeconds);
+	if (!bLunarHoldDelayElapsed)
+	{
+		if (DelayLeft <= 0.0f)
+		{
+			bLunarHoldDelayElapsed = true;
+			LunarHoldSeconds = 0.0f;
+		}
+	}
+	else
+	{
+		LunarHoldSeconds += SafeDeltaSeconds;
+	}
+	NativeOnLunarHoldProgress(LunarHoldSeconds, LunarPressedSeconds, DelayLeft, bLunarHoldDelayElapsed);
+}
+
+void ULunarNavigableWidget::ResetLunarHoldTracking()
+{
+	bLunarHoldTracking = false;
+	bLunarHoldDelayElapsed = false;
+	LunarHoldSeconds = 0.0f;
+	LunarPressedSeconds = 0.0f;
+}
+
 void ULunarNavigableWidget::CancelPointerPress()
 {
 	if (!bPointerPressed)
 	{
 		return;
 	}
+	const bool bRejectedPress = bPointerPressRejected;
 	bPointerPressed = false;
 	bPointerActivationEligible = false;
+	bPointerPressRejected = false;
 	if (FSlateApplication::IsInitialized())
 	{
 		if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
@@ -1555,7 +1366,14 @@ void ULunarNavigableWidget::CancelPointerPress()
 			}
 		}
 	}
-	NativeOnLunarReleased();
+	if (bRejectedPress)
+	{
+		RefreshVisualState();
+	}
+	else
+	{
+		NativeOnLunarReleased();
+	}
 }
 
 ULunarNavigationSubsystem* ULunarNavigableWidget::ResolveNavigationSubsystem() const
@@ -1619,17 +1437,26 @@ void ULunarNavigableWidget::InvalidateInputPrompt()
 
 bool ULunarNavigableWidget::IsEffectivelyInteractive() const
 {
+	return IsLunarHierarchyAvailable(false);
+}
+
+bool ULunarNavigableWidget::IsLunarHierarchyAvailable(const bool bAllowSelfDisabled) const
+{
 	if (HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed))
 	{
 		return false;
 	}
-
 	const UWidget* Current = this;
 	TSet<TObjectKey<UWidget>> Visited;
 	while (Current && !Visited.Contains(TObjectKey<UWidget>(const_cast<UWidget*>(Current))))
 	{
 		Visited.Add(TObjectKey<UWidget>(const_cast<UWidget*>(Current)));
-		if (!Current->IsVisible() || !Current->GetIsEnabled())
+		const ULunarNavigableWidget* LunarWidget = Cast<ULunarNavigableWidget>(Current);
+		const bool bCurrentEnabled = LunarWidget
+			? LunarWidget->bLunarEnabled
+			: Current->GetIsEnabled();
+		const bool bIgnoreSelfDisabled = Current == this && bAllowSelfDisabled;
+		if (!Current->IsVisible() || (!bCurrentEnabled && !bIgnoreSelfDisabled))
 		{
 			return false;
 		}
@@ -1654,6 +1481,20 @@ bool ULunarNavigableWidget::IsEffectivelyInteractive() const
 	return true;
 }
 
+bool ULunarNavigableWidget::CanInspectDisabledControlWithDirectInput(const bool bInputAllowed) const
+{
+	return bInputAllowed
+		&& !bLunarEnabled
+		&& bCanReceiveSelectionWhenDisabled
+		&& IsLunarHierarchyAvailable(true);
+}
+
+bool ULunarNavigableWidget::CanReceiveLunarPointerPresentation() const
+{
+	return bCanInteractWithPointer
+		&& (IsEffectivelyInteractive() || CanInspectDisabledControlWithDirectInput(bCanInteractWithPointer));
+}
+
 void ULunarNavigableWidget::SynchronizeLunarAccessibility()
 {
 	if (const TSharedPtr<SWidget> SlateWidget = GetCachedWidget())
@@ -1664,10 +1505,13 @@ void ULunarNavigableWidget::SynchronizeLunarAccessibility()
 		}
 		else
 		{
-			SlateWidget->SetAccessibleBehavior(EAccessibleBehavior::Custom, TAttribute<FText>(AccessibleName), EAccessibleType::Main);
+			SlateWidget->SetAccessibleBehavior(
+				EAccessibleBehavior::Custom,
+				TAttribute<FText>(FText::FromString(AccessibleName)),
+				EAccessibleType::Main);
 		}
 
-		FText AccessibleSummary = AccessibleDescription;
+		FText AccessibleSummary = FText::FromString(AccessibleDescription);
 		const FText AccessibleValue = NativeGetLunarAccessibleValueText();
 		if (!AccessibleValue.IsEmpty())
 		{
@@ -1681,11 +1525,11 @@ void ULunarNavigableWidget::SynchronizeLunarAccessibility()
 		if (!IsEffectivelyInteractive() && !DisabledReason.IsEmpty())
 		{
 			AccessibleSummary = AccessibleSummary.IsEmpty()
-				? DisabledReason
+				? FText::FromString(DisabledReason)
 				: FText::Format(
 					NSLOCTEXT("LunarNavigation", "AccessibleDisabledSummary", "{0} {1}"),
 					AccessibleSummary,
-					DisabledReason);
+					FText::FromString(DisabledReason));
 		}
 
 		if (!AccessibleSummary.IsEmpty())
@@ -1699,137 +1543,6 @@ void ULunarNavigableWidget::SynchronizeLunarAccessibility()
 	}
 }
 
-void ULunarNavigableWidget::ApplyStyleTarget(const FLunarCommonStylePatch& NewTarget)
-{
-	EnsureStyleBaseline();
-	const FLunarCommonStylePatch MaterializedTarget = MaterializeCommonStyleSnapshot(NewTarget);
-	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
-	const bool bReduceMotion = Settings && Settings->Navigation.Accessibility.bReduceMotion;
-	if (bReduceMotion)
-	{
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		bUseCapturedTextTransitionSource = false;
-		StyleTransitionElapsed = 0.0f;
-		StyleTransitionDuration = 0.0f;
-		TransitionSourceCommonStyle = MaterializedTarget;
-		TransitionTargetCommonStyle = MaterializedTarget;
-		LogicalTargetCommonStyle = MaterializedTarget;
-		TransitionSourceAuthoredCommonStyle = NewTarget;
-		TransitionTargetAuthoredCommonStyle = NewTarget;
-		LogicalTargetAuthoredCommonStyle = NewTarget;
-		ApplyDisplayedStyle(MaterializedTarget);
-		return;
-	}
-
-	if (bHasDisplayedStyle
-		&& LunarStyleResolver::AreCommonStylesEquivalent(LogicalTargetAuthoredCommonStyle, NewTarget))
-	{
-		ApplyResolvedCommonStyle(DisplayedCommonStyle);
-		return;
-	}
-
-	const bool bWasTransitionActive = bStyleTransitionActive;
-	if (bStyleTransitionActive)
-	{
-		const bool bReturnsToSource = !bStyleTransitionReversing
-			&& LunarStyleResolver::AreCommonStylesEquivalent(TransitionSourceCommonStyle, MaterializedTarget);
-		const bool bReturnsToForwardTarget = bStyleTransitionReversing
-			&& LunarStyleResolver::AreCommonStylesEquivalent(TransitionTargetCommonStyle, MaterializedTarget);
-		if (bReturnsToSource || bReturnsToForwardTarget)
-		{
-			LogicalTargetCommonStyle = MaterializedTarget;
-			LogicalTargetAuthoredCommonStyle = NewTarget;
-			bStyleTransitionReversing = bReturnsToSource;
-			FLunarCommonStylePatch TransitionSnapshot = DisplayedCommonStyle;
-			LunarStyleResolver::ApplyCommonDiscreteFields(
-				TransitionSnapshot,
-				bStyleTransitionReversing ? TransitionSourceCommonStyle : TransitionTargetCommonStyle);
-			ApplyDisplayedStyle(TransitionSnapshot);
-			return;
-		}
-	}
-
-	const bool bCanTransition = bHasDisplayedStyle
-		&& MaterializedTarget.Transition.bEnabled
-		&& MaterializedTarget.Transition.Duration > 0.0f;
-	if (!bCanTransition)
-	{
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		bUseCapturedTextTransitionSource = false;
-		StyleTransitionElapsed = 0.0f;
-		StyleTransitionDuration = 0.0f;
-		TransitionSourceCommonStyle = MaterializedTarget;
-		TransitionTargetCommonStyle = MaterializedTarget;
-		LogicalTargetCommonStyle = MaterializedTarget;
-		TransitionSourceAuthoredCommonStyle = NewTarget;
-		TransitionTargetAuthoredCommonStyle = NewTarget;
-		LogicalTargetAuthoredCommonStyle = NewTarget;
-		ApplyDisplayedStyle(MaterializedTarget);
-		return;
-	}
-
-	if (LunarStyleResolver::AreCommonStylesEquivalent(DisplayedCommonStyle, MaterializedTarget))
-	{
-		bStyleTransitionActive = false;
-		bStyleTransitionReversing = false;
-		bUseCapturedTextTransitionSource = false;
-		StyleTransitionElapsed = 0.0f;
-		StyleTransitionDuration = 0.0f;
-		TransitionSourceCommonStyle = MaterializedTarget;
-		TransitionTargetCommonStyle = MaterializedTarget;
-		LogicalTargetCommonStyle = MaterializedTarget;
-		TransitionSourceAuthoredCommonStyle = NewTarget;
-		TransitionTargetAuthoredCommonStyle = NewTarget;
-		LogicalTargetAuthoredCommonStyle = NewTarget;
-		ApplyDisplayedStyle(MaterializedTarget);
-		return;
-	}
-
-	bUseCapturedTextTransitionSource = true;
-	if (bUseCapturedTextTransitionSource)
-	{
-		EnsureTextBlockStyleBaselines();
-		for (FLunarTextBlockStyleBaseline& Baseline : TextBlockStyleBaselines)
-		{
-			if (const UTextBlock* TextBlock = Baseline.TextBlock.Get())
-			{
-				Baseline.CapturedTransitionSourceColor = LunarContentStyleLayer.IsValid()
-					? LunarContentStyleLayer->ResolveForChild(TextBlock->GetColorAndOpacity())
-					: LunarNavigableWidget_Private::ResolveSlateColor(
-						TextBlock->GetColorAndOpacity(),
-						StyleBaselineCommonStyle.TextColor.GetSpecifiedColor());
-				Baseline.CapturedTransitionSourceShadowColor = TextBlock->GetShadowColorAndOpacity();
-				Baseline.CapturedTransitionSourceShadowOffset = TextBlock->GetShadowOffset();
-			}
-		}
-	}
-	TransitionSourceCommonStyle = DisplayedCommonStyle;
-	TransitionTargetCommonStyle = MaterializedTarget;
-	LogicalTargetCommonStyle = MaterializedTarget;
-	TransitionSourceAuthoredCommonStyle = bWasTransitionActive
-		? DisplayedCommonStyle
-		: LogicalTargetAuthoredCommonStyle;
-	TransitionTargetAuthoredCommonStyle = NewTarget;
-	LogicalTargetAuthoredCommonStyle = NewTarget;
-	StyleTransitionElapsed = 0.0f;
-	StyleTransitionDuration = MaterializedTarget.Transition.Duration;
-	bStyleTransitionActive = true;
-	bStyleTransitionReversing = false;
-	ApplyDisplayedStyle(LunarStyleResolver::InterpolateCommonStylePatch(
-		TransitionSourceCommonStyle,
-		TransitionTargetCommonStyle,
-		0.0f));
-}
-
-void ULunarNavigableWidget::ApplyDisplayedStyle(const FLunarCommonStylePatch& NewDisplayedStyle)
-{
-	DisplayedCommonStyle = NewDisplayedStyle;
-	bHasDisplayedStyle = true;
-	ApplyResolvedCommonStyle(DisplayedCommonStyle);
-}
-
 void ULunarNavigableWidget::PlaySelectedFeedback()
 {
 	ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
@@ -1838,13 +1551,19 @@ void ULunarNavigableWidget::PlaySelectedFeedback()
 	{
 		return;
 	}
-	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(SoundOverrides.NavigationSelected, Settings->Navigation.Audio.DefaultNavigationSelectedSound))
+	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(
+		SoundOverrides.NavigationSelected,
+		Settings->Navigation.Audio.DefaultNavigationSelectedSound,
+		SoundFeedbackAsset ? &SoundFeedbackAsset->Sounds.NavigationSelected : nullptr))
 	{
 		NavigationSubsystem->PlayUISound(*Sound);
 	}
 	if (NavigationSubsystem->GetLastInputDevice() == ELunarInputDeviceType::Gamepad)
 	{
-		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(HapticOverrides.NavigationSelected, Settings->Navigation.Haptics.DefaultNavigationSelectedHaptic))
+		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(
+			HapticOverrides.NavigationSelected,
+			Settings->Navigation.Haptics.DefaultNavigationSelectedHaptic,
+			HapticFeedbackAsset ? &HapticFeedbackAsset->Haptics.NavigationSelected : nullptr))
 		{
 			NavigationSubsystem->PlayUIHaptic(*Haptic);
 		}
@@ -1862,20 +1581,26 @@ void ULunarNavigableWidget::PlayPressedFeedback()
 	const bool bPointer = bPointerPressed || NavigationSubsystem->IsPointerPresentationActive();
 	const FLunarUISoundOverride& Override = bPointer ? SoundOverrides.PointerPressed : SoundOverrides.NavigationPressed;
 	const FLunarUISoundSpec& Global = bPointer ? Settings->Navigation.Audio.DefaultPointerPressedSound : Settings->Navigation.Audio.DefaultNavigationPressedSound;
-	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global))
+	const FLunarUISoundSpec* DataAssetSound = SoundFeedbackAsset
+		? (bPointer ? &SoundFeedbackAsset->Sounds.PointerPressed : &SoundFeedbackAsset->Sounds.NavigationPressed)
+		: nullptr;
+	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global, DataAssetSound))
 	{
 		NavigationSubsystem->PlayUISound(*Sound);
 	}
 	if (!bPointer && NavigationSubsystem->GetLastInputDevice() == ELunarInputDeviceType::Gamepad)
 	{
-		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(HapticOverrides.NavigationPressed, Settings->Navigation.Haptics.DefaultNavigationPressedHaptic))
+		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(
+			HapticOverrides.NavigationPressed,
+			Settings->Navigation.Haptics.DefaultNavigationPressedHaptic,
+			HapticFeedbackAsset ? &HapticFeedbackAsset->Haptics.NavigationPressed : nullptr))
 		{
 			NavigationSubsystem->PlayUIHaptic(*Haptic);
 		}
 	}
 }
 
-void ULunarNavigableWidget::PlayActivatedFeedback()
+void ULunarNavigableWidget::PlayClickedFeedback()
 {
 	ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
 	const ULunarSettings* Settings = GetDefault<ULunarSettings>();
@@ -1884,15 +1609,21 @@ void ULunarNavigableWidget::PlayActivatedFeedback()
 		return;
 	}
 	const bool bPointer = NavigationSubsystem->IsPointerPresentationActive();
-	const FLunarUISoundOverride& Override = bPointer ? SoundOverrides.PointerActivated : SoundOverrides.NavigationActivated;
-	const FLunarUISoundSpec& Global = bPointer ? Settings->Navigation.Audio.DefaultPointerActivatedSound : Settings->Navigation.Audio.DefaultNavigationActivatedSound;
-	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global))
+	const FLunarUISoundOverride& Override = bPointer ? SoundOverrides.PointerClicked : SoundOverrides.NavigationClicked;
+	const FLunarUISoundSpec& Global = bPointer ? Settings->Navigation.Audio.DefaultPointerClickedSound : Settings->Navigation.Audio.DefaultNavigationClickedSound;
+	const FLunarUISoundSpec* DataAssetSound = SoundFeedbackAsset
+		? (bPointer ? &SoundFeedbackAsset->Sounds.PointerClicked : &SoundFeedbackAsset->Sounds.NavigationClicked)
+		: nullptr;
+	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global, DataAssetSound))
 	{
 		NavigationSubsystem->PlayUISound(*Sound);
 	}
 	if (!bPointer && NavigationSubsystem->GetLastInputDevice() == ELunarInputDeviceType::Gamepad)
 	{
-		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(HapticOverrides.NavigationActivated, Settings->Navigation.Haptics.DefaultNavigationActivatedHaptic))
+		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(
+			HapticOverrides.NavigationClicked,
+			Settings->Navigation.Haptics.DefaultNavigationClickedHaptic,
+			HapticFeedbackAsset ? &HapticFeedbackAsset->Haptics.NavigationClicked : nullptr))
 		{
 			NavigationSubsystem->PlayUIHaptic(*Haptic);
 		}
@@ -1910,13 +1641,19 @@ void ULunarNavigableWidget::PlayRejectedFeedback()
 	const bool bPointer = NavigationSubsystem->IsPointerPresentationActive();
 	const FLunarUISoundOverride& Override = bPointer ? SoundOverrides.PointerRejected : SoundOverrides.NavigationRejected;
 	const FLunarUISoundSpec& Global = bPointer ? Settings->Navigation.Audio.DefaultPointerRejectedSound : Settings->Navigation.Audio.DefaultNavigationRejectedSound;
-	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global))
+	const FLunarUISoundSpec* DataAssetSound = SoundFeedbackAsset
+		? (bPointer ? &SoundFeedbackAsset->Sounds.PointerRejected : &SoundFeedbackAsset->Sounds.NavigationRejected)
+		: nullptr;
+	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(Override, Global, DataAssetSound))
 	{
 		NavigationSubsystem->PlayUISound(*Sound);
 	}
 	if (!bPointer && NavigationSubsystem->GetLastInputDevice() == ELunarInputDeviceType::Gamepad)
 	{
-		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(HapticOverrides.NavigationRejected, Settings->Navigation.Haptics.DefaultNavigationRejectedHaptic))
+		if (const FLunarUIHapticSpec* Haptic = LunarNavigableWidget_Private::ResolveHaptic(
+			HapticOverrides.NavigationRejected,
+			Settings->Navigation.Haptics.DefaultNavigationRejectedHaptic,
+			HapticFeedbackAsset ? &HapticFeedbackAsset->Haptics.NavigationRejected : nullptr))
 		{
 			NavigationSubsystem->PlayUIHaptic(*Haptic);
 		}
@@ -1931,7 +1668,10 @@ void ULunarNavigableWidget::PlayPointerHoveredFeedback()
 	{
 		return;
 	}
-	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(SoundOverrides.PointerHovered, Settings->Navigation.Audio.DefaultPointerHoveredSound))
+	if (const FLunarUISoundSpec* Sound = LunarNavigableWidget_Private::ResolveSound(
+		SoundOverrides.PointerHovered,
+		Settings->Navigation.Audio.DefaultPointerHoveredSound,
+		SoundFeedbackAsset ? &SoundFeedbackAsset->Sounds.PointerHovered : nullptr))
 	{
 		NavigationSubsystem->PlayUISound(*Sound);
 	}

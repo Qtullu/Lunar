@@ -1,35 +1,69 @@
 // Copyright 2026 Edgar Frolenkov All rights reserved.
 
-/**
- * @file LunarComboBox.h
- * @brief Declares the data-backed Lunar ComboBox and its nested popup navigation behavior.
- * @ingroup LunarNavigationControls
- */
+/** @file LunarComboBox.h @brief Self-contained data-backed Lunar ComboBox. @ingroup LunarNavigationControls */
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Styling/SlateTypes.h"
 #include "UI/Navigation/Core/LunarNavigableWidget.h"
 #include "LunarComboBox.generated.h"
 
 class FLunarComboBoxOutsideClickInputProcessor;
+class SBorder;
+class SBox;
 class SImage;
-class UImage;
-class ULunarComboBox;
-class ULunarComboBoxOptionItem;
+class SMenuAnchor;
+class STextBlock;
+class SWidgetSwitcher;
+class UCurveFloat;
+class ULunarComboBoxEmptyVisual;
+class ULunarComboBoxEntry;
+class ULunarComboBoxSelectedVisual;
 class ULunarListView;
 class ULunarNavigationScope;
 class ULunarNavigationSubsystem;
-class UTextBlock;
-class UWidget;
+
+/** Placement of the generated popup relative to the closed ComboBox face. */
+UENUM(BlueprintType)
+enum class ELunarComboBoxPopupPlacement : uint8
+{
+	/** Let Slate choose above or below while preserving left alignment. */
+	Auto,
+	/** Place the popup below and align its left edge. */
+	BelowLeft,
+	/** Place the popup below and center it on the closed face. */
+	BelowCenter,
+	/** Place the popup below and align its right edge. */
+	BelowRight,
+	/** Place the popup above and align its left edge. */
+	AboveLeft,
+	/** Place the popup above and center it on the closed face. */
+	AboveCenter,
+	/** Place the popup above and align its right edge. */
+	AboveRight
+};
+
+/** Policy used when the committed option disappears or becomes disabled. */
+UENUM(BlueprintType)
+enum class ELunarComboBoxSelectionRecoveryMode : uint8
+{
+	/** Recover from the nearest eligible option around the previous logical index. */
+	Auto,
+	/** Recover from the nearest eligible option around ForcedSelectionIndex. */
+	ForceIndex
+};
+
+/** Broadcast after the external filter text changes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FLunarComboBoxFilterTextChangedSignature,
+	ULunarComboBox*, ComboBox,
+	FText, PreviousFilterText,
+	FText, NewFilterText);
 
 /**
- * Data-backed ComboBox whose popup owns a nested navigation scope and virtualized option ListView.
- *
- * Opening creates a temporary selection inside the popup. Only activation commits that value to
- * SelectedOptionId; cancellation closes the nested scope without changing the committed value.
- *
- * @ingroup LunarNavigationControls
+ * Self-contained ComboBox that owns its closed presentation, popup, virtualized list, and nested scope.
+ * Owner Blueprints only configure option data, optional visual classes, and inline fallback styles.
  */
 UCLASS(Blueprintable)
 class LUNAR_API ULunarComboBox : public ULunarNavigableWidget
@@ -37,217 +71,361 @@ class LUNAR_API ULunarComboBox : public ULunarNavigableWidget
 	GENERATED_BODY()
 
 public:
-	/** Creates a ComboBox with closed-popup navigation policies. @param ObjectInitializer Unreal object initializer. */
+	/** Creates a self-contained ComboBox with null custom visual classes and usable inline defaults. */
 	ULunarComboBox(const FObjectInitializer& ObjectInitializer);
 
-	/** Replaces the option data set and rebuilds stable lookup adapters. @param NewOptions New option descriptors. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|ComboBox")
-	void SetOptions(const TArray<FLunarComboBoxOption>& NewOptions);
+	/** Replaces the source option array and normalizes committed and temporary selection. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox", meta = (AdvancedDisplay = "NotificationPolicy"))
+	void SetOptions(const TArray<FLunarComboBoxOption>& NewOptions, ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
 
-	/** Programmatically commits an existing option ID. @param OptionId Existing option ID, or NAME_None to clear. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|ComboBox")
-	void SetSelectedOptionById(FName OptionId);
+	/** Commits an option by stable ID, or clears it only when empty selection is allowed. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox", meta = (AdvancedDisplay = "NotificationPolicy"))
+	void SetSelectedOptionById(FName OptionId, ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
 
-	/** Returns the committed option ID. @return Stable selected ID, or NAME_None. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Returns the stable ID of the committed option, or None while empty. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox")
 	FName GetSelectedOptionId() const { return SelectedOptionId; }
 
-	/** Opens the popup and pushes its nested navigation scope. @return True when open or successfully opened. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Returns the source-array index of the committed option, or INDEX_NONE. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox")
+	int32 GetSelectedOptionIndex() const;
+
+	/** Copies the committed option and returns whether a valid option exists. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox")
+	bool GetSelectedOption(FLunarComboBoxOption& OutOption) const;
+
+	/** Opens the generated popup, restores its temporary cursor, and pushes its nested scope. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox")
 	bool OpenComboBox();
 
-	/** Closes the popup without committing its temporary selection. @return True when closed or close was accepted. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Closes the popup without committing its temporary cursor. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox")
 	bool CloseComboBox();
 
-	/** Tests whether the popup currently owns an open scope. @return True while open. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Returns whether the popup is logically open. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox")
 	bool IsComboBoxOpen() const { return bComboBoxOpen; }
 
-	/** Updates the search query and filtered option list. @param NewSearchQuery New localized query text. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|ComboBox|Search")
-	void SetSearchQuery(const FText& NewSearchQuery);
+	/** Applies externally supplied filter text; the ComboBox never creates a search field itself. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Filter")
+	void SetFilterText(const FText& NewFilterText);
 
-	/**
-	 * Tests an option against a search query.
-	 * @param Option Candidate option.
-	 * @param Query Search query.
-	 * @return True when the option remains visible.
-	 */
-	UFUNCTION(BlueprintNativeEvent, Category = "Lunar|UI|Navigation|ComboBox|Search")
+	/** Returns the currently applied external filter text. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox|Filter")
+	FText GetFilterText() const { return FilterText; }
+
+	/** Clears external filter text and rebuilds visible options. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Filter")
+	void ClearFilter();
+
+	/** Re-evaluates the current external filter against all source options. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Filter")
+	void RefreshFilter();
+
+	/** Returns whether one option matches the external query; default matching is case-insensitive over text and ID. */
+	UFUNCTION(BlueprintNativeEvent, Category = "Lunar|UI|ComboBox|Filter")
+	bool DoesOptionMatchFilter(const FLunarComboBoxOption& Option, const FText& Query) const;
+	virtual bool DoesOptionMatchFilter_Implementation(const FLunarComboBoxOption& Option, const FText& Query) const;
+
+	/** Deprecated compatibility alias for SetFilterText. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Filter", meta = (DeprecatedFunction, DeprecationMessage = "Use SetFilterText."))
+	void SetSearchQuery(const FText& NewSearchQuery) { SetFilterText(NewSearchQuery); }
+
+	/** Deprecated compatibility hook forwarded to DoesOptionMatchFilter. */
+	UFUNCTION(BlueprintNativeEvent, Category = "Lunar|UI|ComboBox|Filter", meta = (DeprecatedFunction, DeprecationMessage = "Override DoesOptionMatchFilter instead."))
 	bool DoesOptionMatchSearch(const FLunarComboBoxOption& Option, const FText& Query) const;
-	/** Default culture-aware case-insensitive substring matcher. @param Option Candidate option. @param Query Search query. @return True on match. */
 	virtual bool DoesOptionMatchSearch_Implementation(const FLunarComboBoxOption& Option, const FText& Query) const;
 
-	/** Authored option descriptors, each identified by a unique, non-empty stable ID. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Replaces the native fallback arrow brush and reapplies presentation immediately. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Presentation")
+	void SetArrowBrush(const FSlateBrush& NewBrush);
+	/** Returns the native fallback arrow brush. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox|Presentation")
+	FSlateBrush GetArrowBrush() const { return ArrowBrush; }
+	/** Replaces the native fallback arrow tint and reapplies presentation immediately. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Presentation")
+	void SetArrowTint(FLinearColor NewTint);
+	/** Returns the native fallback arrow tint. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox|Presentation")
+	FLinearColor GetArrowTint() const { return ArrowTint; }
+	/** Replaces popup row and scrollbar styles used by the internal ListView. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Presentation")
+	void ConfigurePopupListPresentation(const FTableRowStyle& NewRowStyle, const FScrollBarStyle& NewScrollBarStyle);
+	/** Copies popup row and scrollbar styles used by the internal ListView. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox|Presentation")
+	void GetPopupListPresentation(FTableRowStyle& OutRowStyle, FScrollBarStyle& OutScrollBarStyle) const;
+	/** Replaces every native subpart style that is commonly authored together. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|ComboBox|Presentation")
+	void ConfigureComboBoxPresentation(const FSlateBrush& NewArrowBrush, FLinearColor NewArrowTint, const FTableRowStyle& NewRowStyle, const FScrollBarStyle& NewScrollBarStyle);
+	/** Copies every native subpart style that is commonly authored together. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|ComboBox|Presentation")
+	void GetComboBoxPresentation(FSlateBrush& OutArrowBrush, FLinearColor& OutArrowTint, FTableRowStyle& OutRowStyle, FScrollBarStyle& OutScrollBarStyle) const;
+
+	/** Source option data; every non-empty OptionId must be unique. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox", meta = (DesignerRebuild))
 	TArray<FLunarComboBoxOption> Options;
 
-	/** Stable ID of the committed value. Popup navigation changes only the private temporary ID. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Stable ID of the committed value, or None only when empty selection is allowed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox")
 	FName SelectedOptionId = NAME_None;
 
-	/** Enables query-based option filtering inside the popup. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|ComboBox|Search")
-	bool bEnableSearch = false;
+	/** Allows explicit empty selection and PlaceholderText presentation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Selection")
+	bool bAllowEmptySelection = false;
 
-	/** Disabled by default: the query is cleared before every popup open. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|ComboBox|Search")
-	bool bRestoreSearchQuery = false;
+	/** Determines where selection recovers after the committed option disappears or becomes disabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Selection")
+	ELunarComboBoxSelectionRecoveryMode SelectionRecoveryMode = ELunarComboBoxSelectionRecoveryMode::Auto;
 
-	/** Current popup search query. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Lunar|UI|Navigation|ComboBox|Search")
-	FText SearchQuery;
+	/** Preferred source-array index used by ForceIndex recovery. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Selection", meta = (ClampMin = "0", UIMin = "0", EditCondition = "SelectionRecoveryMode == ELunarComboBoxSelectionRecoveryMode::ForceIndex", EditConditionHides))
+	int32 ForcedSelectionIndex = 0;
 
-	/** Settings copied into the popup's nested scope. The option ListView remains the default initial item. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Closed-face text shown while empty selection is allowed and active. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Selection")
+	FText PlaceholderText;
+
+	/** Optional complete Blueprint class for the closed ComboBox face; null uses inline fallback style. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Visual Classes", meta = (DesignerRebuild, AllowAbstract = "false", BlueprintBaseOnly = "true"))
+	TSubclassOf<ULunarComboBoxSelectedVisual> SelectedVisualClass;
+
+	/** Optional Blueprint row class for popup options; null uses the native text-row fallback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Visual Classes", meta = (DesignerRebuild, AllowAbstract = "false", BlueprintBaseOnly = "true"))
+	TSubclassOf<ULunarComboBoxEntry> EntryVisualClass;
+
+	/** Optional Blueprint class for the no-filter-results view; null uses inline fallback text. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Visual Classes", meta = (DesignerRebuild, AllowAbstract = "false", BlueprintBaseOnly = "true"))
+	TSubclassOf<ULunarComboBoxEmptyVisual> EmptyResultsVisualClass;
+
+	/** Placement of the generated popup relative to the closed face. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup", meta = (DesignerRebuild))
+	ELunarComboBoxPopupPlacement PopupPlacement = ELunarComboBoxPopupPlacement::Auto;
+
+	/** Axis used by the internal option ListView and its local directional navigation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup", meta = (DesignerRebuild))
+	TEnumAsByte<EOrientation> PopupOrientation = Orient_Vertical;
+
+	/** Wraps the internal temporary cursor between opposite list boundaries. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup")
+	bool bWrapNavigation = false;
+
+	/** Exact popup width when positive; zero follows the closed face subject to maximum width. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float PopupWidthOverride = 0.0f;
+
+	/** Maximum height of popup content before internal scrolling takes over. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float MaximumPopupHeight = 320.0f;
+
+	/** Maximum width of popup content before internal scrolling takes over. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup", meta = (ClampMin = "1.0", UIMin = "1.0"))
+	float MaximumPopupWidth = 640.0f;
+
+	/** Settings for the nested navigation scope owned by the open popup. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Popup")
 	FLunarNavigationScopeSettings PopupScopeSettings;
 
-	/** Broadcast when the committed option ID changes. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|ComboBox")
+	/** Keeps external filter text across popup closes; disabled clears it on close. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Filter")
+	bool bPreserveFilterText = false;
+
+	/** Read-only external filter text currently applied to the source options. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "Lunar|UI|ComboBox|Filter")
+	FText FilterText;
+
+	/** Native fallback message shown when the filter exposes no options. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Filter")
+	FText EmptyResultsText;
+
+	/** Enables open and close opacity/translation interpolation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Interpolation", meta = (DisplayName = "Interpolate Popup"))
+	bool bInterpolatePopup = false;
+
+	/** Normalized popup animation speed; zero snaps to the target. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Interpolation", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bInterpolatePopup"))
+	float PopupInterpolationSpeed = 12.0f;
+
+	/** Optional normalized animation curve; null uses linear progress. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Interpolation", meta = (EditCondition = "bInterpolatePopup"))
+	TObjectPtr<UCurveFloat> PopupInterpolationCurve = nullptr;
+
+	/** Translation magnitude applied opposite the resolved opening direction. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Interpolation", meta = (EditCondition = "bInterpolatePopup"))
+	FVector2D PopupAnimationOffset = FVector2D(0.0f, 8.0f);
+
+	/** Native fallback style for the closed interactive surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FButtonStyle ClosedButtonStyle;
+	/** Native fallback text style for the committed value or placeholder. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FTextBlockStyle ClosedTextStyle;
+	/** Native fallback arrow brush. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FSlateBrush ArrowBrush;
+	/** Tint applied to the native fallback arrow. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FLinearColor ArrowTint = FLinearColor::White;
+	/** Native popup background brush. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FSlateBrush PopupBackgroundBrush;
+	/** Padding between popup background and generated list or empty visual. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FMargin PopupPadding = FMargin(4.0f);
+	/** Native fallback row style used by the internal ListView. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FTableRowStyle PopupRowStyle;
+	/** Scrollbar style used by the internal ListView. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FScrollBarStyle PopupScrollBarStyle;
+	/** Native fallback option text style. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FTextBlockStyle EntryTextStyle;
+	/** Native fallback option row padding. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FMargin EntryPadding = FMargin(8.0f, 4.0f);
+	/** Native fallback text style for the empty-results message. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FTextBlockStyle EmptyResultsTextStyle;
+	/** Native fallback padding for the empty-results message. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|ComboBox|Default Style")
+	FMargin EmptyResultsPadding = FMargin(12.0f, 8.0f);
+
+#if WITH_EDITORONLY_DATA
+	/** Shows the generated popup inline in UMG Designer without creating a runtime scope. */
+	UPROPERTY(EditAnywhere, Category = "Lunar|UI|ComboBox|Designer Preview", meta = (DesignerRebuild))
+	bool bPreviewPopupOpen = false;
+#endif
+
+	/** Broadcast after a committed selection change. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|ComboBox|Events")
 	FLunarComboBoxSelectionChangedSignature OnSelectionChanged;
-
-	/** Broadcast after the popup scope has opened. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|ComboBox")
-	FLunarNavigableWidgetEventSignature OnComboBoxOpened;
-
-	/** Broadcast after the popup scope has closed. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|ComboBox")
-	FLunarNavigableWidgetEventSignature OnComboBoxClosed;
+	/** Broadcast after the generated popup and nested scope open. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|ComboBox|Events")
+	FLunarComboBoxStateChangedSignature OnComboBoxOpened;
+	/** Broadcast after the generated popup and nested scope close. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|ComboBox|Events")
+	FLunarComboBoxStateChangedSignature OnComboBoxClosed;
+	/** Broadcast after external filter text changes. */
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|ComboBox|Filter|Events")
+	FLunarComboBoxFilterTextChangedSignature OnFilterTextChanged;
 
 protected:
-	/** Visible popup root whose descendants form the nested scope. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Lunar|UI|Navigation|ComboBox|Owner Bindings")
-	TObjectPtr<UWidget> PopupRootWidget;
+	/** @name UWidget and Lunar control lifecycle overrides. @{ */
 
-	/** Required virtualized option-list owner binding. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Lunar|UI|Navigation|ComboBox|Owner Bindings")
-	TObjectPtr<ULunarListView> OptionsListView;
-
-	/** Optional owner-created image receiving the resolved popup brush. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Lunar|UI|Navigation|ComboBox|Owner Bindings")
-	TObjectPtr<UImage> PopupBackgroundImage;
-
-	/** Optional owner-created text receiving the committed option's display text. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Lunar|UI|Navigation|ComboBox|Owner Bindings")
-	TObjectPtr<UTextBlock> SelectedOptionTextBlock;
-
-	/** Optional navigable search control. It participates in the popup scope but is never the default item. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Lunar|UI|Navigation|ComboBox|Owner Bindings")
-	TObjectPtr<ULunarNavigableWidget> SearchFieldNavigationWidget;
-
-	/** Builds the compact ComboBox Slate presentation. @return Specialized Slate presentation. */
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual TSharedPtr<SWidget> RebuildLunarSpecializedPresentation() override;
-	/** Releases generated Slate presentation resources. @param bReleaseChildren Whether child resources must also be released. */
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
-	/** Synchronizes options, bindings, selection text, and resolved style. */
 	virtual void SynchronizeProperties() override;
-	/** Binds popup owner controls and culture-change notifications. */
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
-	/** Closes the popup and releases runtime delegates during destruction. */
 	virtual void NativeDestruct() override;
-	/** Tests whether this ComboBox handles the routed Lunar action. @param ActionContext Routed action context. @return True when supported. */
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual bool NativeCanHandleLunarAction(const FLunarUIActionContext& ActionContext) const override;
-	/** Opens, closes, or delegates actions to the popup. @param ActionContext Routed action context. @return Lunar routing result. */
 	virtual ELunarUIActionResult NativeHandleLunarAction(const FLunarUIActionContext& ActionContext) override;
-	/** Tests whether the closed ComboBox may be activated. @return True when activation is allowed. */
 	virtual bool NativeCanActivateLunarWidget() const override;
-	/** Opens the ComboBox in response to standard activation. */
 	virtual void NativeOnLunarActivated() override;
-	/** Returns the selected option label for accessibility. @return Localized accessible value. */
+	virtual void NativeOnLunarVisualStateChanged(const FLunarUIVisualState& PreviousState, const FLunarUIVisualState& NewState, bool bIsDesignerPreview) override;
 	virtual FText NativeGetLunarAccessibleValueText() const override;
-	/** Resolves common and ComboBox-specific styles. @param OutStyle Resolved common patch. @param OutError Actionable failure text. @return True on success. */
-	virtual bool ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const override;
-	/** Applies common style and schedules ComboBox-specific presentation. @param ResolvedStyle Resolved common style patch. */
-	virtual void ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle) override;
+
+	/** @} */
 
 private:
-	/** Finds an authored option by stable ID. @param OptionId Stable option ID. @return Option descriptor, or null. */
+	/** @name Internal option, presentation, popup, animation, scope, and validation helpers. @{ */
+
 	const FLunarComboBoxOption* FindOptionById(FName OptionId) const;
-	/** Tests whether an option is a valid enabled selection target. @param OptionId Stable option ID. @return True when eligible. */
-	bool IsOptionEligible(FName OptionId) const;
-	/** Rebuilds UObject ListView adapters and validates stable option IDs. */
-	void RebuildOptionAdapters();
-	/** Rebuilds the search-filtered ListView data. @param bPreserveTemporarySelection Preserve popup selection when possible. @param bUseListViewRestoration Let ListView choose a deterministic fallback. */
+	bool IsOptionNavigable(FName OptionId) const;
+	bool IsOptionCommittable(FName OptionId) const;
+	void RebuildOptionLookup();
+	int32 FindRecoveryIndex(int32 PreferredIndex) const;
+	void NormalizeCommittedSelection(int32 PreferredIndex, bool bNotify);
 	void RebuildFilteredOptions(bool bPreserveTemporarySelection, bool bUseListViewRestoration = false);
-	/** Seeds temporary popup selection from the committed value or first eligible option. */
 	void SetTemporarySelectionToCommittedOrFirstEligible();
-	/** Commits the popup's temporary selection and closes the popup. */
 	void CommitTemporarySelection();
-	/** Applies a committed value. @param NewOptionId New stable ID, or NAME_None. @param bNotify Whether to broadcast the change. */
 	void ApplyCommittedSelection(FName NewOptionId, bool bNotify);
-	/** Updates compact display text from the committed option. */
 	void UpdateCommittedPresentation();
-	/** Applies arrow, popup, row, and scroll-bar style fields. */
-	void ApplySpecializedStyle();
-	/** Reports newly introduced option configuration errors. @param CurrentErrors Current deduplication keys. */
-	void ReportConfigurationErrors(const TSet<FString>& CurrentErrors);
-	/** Resolves the owning LocalPlayer navigation subsystem. @return Navigation subsystem, or null. */
-	ULunarNavigationSubsystem* GetNavigationSubsystem() const;
-	/** Finalizes visual and delegate state after the popup scope closes. */
+	void ApplyNativePresentation();
+	void ApplyPopupSizing();
+	void UpdatePopupContentMode();
+	void EnsureInternalWidgets();
+	void SynchronizeGeneratedSelectedVisual();
+	void SynchronizeGeneratedEmptyVisual();
+	TSharedRef<SWidget> BuildClosedPresentation();
+	TSharedRef<SWidget> BuildPopupPresentation();
+	TSharedRef<SWidget> BuildDesignerPreviewPresentation(const TSharedRef<SWidget>& ClosedPresentation, const TSharedRef<SWidget>& PopupPresentation);
+	EMenuPlacement ResolveMenuPlacement() const;
+	bool IsResolvedPlacementAbove() const;
+	void BeginPopupAnimation(float TargetAlpha);
+	void UpdatePopupAnimation(float DeltaTime);
+	void ApplyPopupAnimationAlpha(float NewAlpha);
+	float EvaluatePopupCurve(float Progress) const;
+	bool MustSnapPopupAnimation() const;
 	void FinalizePopupClosed();
-	/** Registers the Slate preprocessor used for clicks outside the popup. */
+	void ReportConfigurationErrors(const TSet<FString>& CurrentErrors);
+	ULunarNavigationSubsystem* GetNavigationSubsystem() const;
 	void RegisterOutsideClickProcessor();
-	/** Unregisters the outside-click Slate preprocessor. */
 	void UnregisterOutsideClickProcessor();
-	/** Handles a global pointer press before regular widget routing. @param ScreenPosition Screen-space pointer position. @param SlateUserIndex Originating Slate user. @return True when the popup was closed. */
 	bool HandleGlobalPointerDown(const FVector2D& ScreenPosition, uint32 SlateUserIndex);
-	/** Reapplies culture-sensitive filtering after the active culture changes. */
 	void HandleCultureChanged();
+	void HandleMenuOpenChanged(bool bIsOpen);
 
-	/** Tracks temporary popup selection. @param PreviousItemId Previous item ID. @param NewItemId New item ID. */
+
+	/** @} */
+	/** @name Internal delegate handlers. @{ */
 	UFUNCTION()
-	void HandleListActiveItemChanged(FName PreviousItemId, FName NewItemId);
-
-	/** Commits the active option when the nested ListView activates. */
+	void HandleListActiveItemChanged(ULunarListView* SourceListView, FName PreviousItemId, FName NewItemId);
 	UFUNCTION()
-	void HandleListActivated();
-
-	/** Detects external scope-stack closure. @param PreviousScope Previously active scope. @param NewScope Newly active scope. */
+	void HandleListItemActivated(ULunarListView* SourceListView, int32 ItemIndex, FLunarListViewItemData ItemData);
 	UFUNCTION()
 	void HandleActiveScopeChanged(ULunarNavigationScope* PreviousScope, ULunarNavigationScope* NewScope);
 
-	/** Internal UObject adapters exposed to the nested ListView. */
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<ULunarComboBoxOptionItem>> OptionItems;
+	/** @} */
 
-	/** Runtime nested scope owned by the open popup. */
-	UPROPERTY(Transient)
-	TObjectPtr<ULunarNavigationScope> PopupScope;
+	/** @name Generated UObject children owned by this ComboBox. @{ */
+	UPROPERTY(Transient) TObjectPtr<ULunarListView> InternalOptionsList;
+	UPROPERTY(Transient) TObjectPtr<ULunarComboBoxSelectedVisual> GeneratedSelectedVisual;
+	UPROPERTY(Transient) TObjectPtr<ULunarComboBoxEmptyVisual> GeneratedEmptyResultsVisual;
+	UPROPERTY(Transient) TObjectPtr<ULunarNavigationScope> PopupScope;
 
-	/** Last successfully resolved ComboBox-specific style. */
-	UPROPERTY(Transient)
-	FLunarComboBoxStylePatch ResolvedComboBoxStyle;
+	/** @} */
 
-	/** Lookup from stable option ID to authored descriptor index. */
-	TMap<FName, int32> OptionIndexById;
-	/** Deduplication keys for option configuration errors already reported. */
-	TSet<FString> ReportedConfigurationErrors;
-	/** Generated compact arrow image. */
-	TSharedPtr<SImage> ArrowImage;
-	/** Global pointer input preprocessor installed while the popup is open. */
-	TSharedPtr<FLunarComboBoxOutsideClickInputProcessor> OutsideClickProcessor;
-	/** Handle for the active-culture change delegate. */
-	FDelegateHandle CultureChangedHandle;
-	/** Owner popup brush captured before resolved style is applied. */
-	FSlateBrush PopupBaselineBrush;
-	/** Uncommitted option ID currently highlighted in the popup. */
+	/** @name Stable-ID, validation, and culture caches. @{ */
 	FName TemporaryOptionId = NAME_None;
-	/** Whether PopupBaselineBrush contains a captured owner brush. */
-	bool bHasPopupBaselineBrush = false;
-	/** Whether the nested popup scope is currently open. */
+	int32 LastCommittedOptionIndex = INDEX_NONE;
+	TMap<FName, int32> OptionIndexById;
+	TSet<FString> ReportedConfigurationErrors;
+	FDelegateHandle CultureChangedHandle;
+
+	/** @} */
+
+	/** @name Cached Slate presentation widgets. @{ */
+	TSharedPtr<SMenuAnchor> MenuAnchor;
+	TSharedPtr<SBorder> DefaultClosedBorder;
+	TSharedPtr<STextBlock> DefaultClosedText;
+	TSharedPtr<SImage> DefaultArrowImage;
+	TSharedPtr<STextBlock> DefaultArrowGlyph;
+	TSharedPtr<SBox> PopupSizingBox;
+	TSharedPtr<SBorder> PopupBackgroundBorder;
+	TSharedPtr<SWidgetSwitcher> PopupContentSwitcher;
+	TSharedPtr<SWidget> PopupAnimationRoot;
+	TSharedPtr<FLunarComboBoxOutsideClickInputProcessor> OutsideClickProcessor;
+
+	/** @} */
+
+	/** @name Popup interpolation and re-entrancy state. @{ */
+	float PopupAnimationAlpha = 0.0f;
+	float PopupAnimationSourceAlpha = 0.0f;
+	float PopupAnimationTargetAlpha = 0.0f;
+	float PopupAnimationElapsed = 0.0f;
+	bool bPopupAnimationActive = false;
 	bool bComboBoxOpen = false;
-	/** Reentrancy guard for popup opening. */
+	bool bPopupClosing = false;
 	bool bOpeningComboBox = false;
-	/** Reentrancy guard for popup closure. */
 	bool bClosingComboBox = false;
-	/** Deferred close request raised while opening is in progress. */
+	bool bIgnoreMenuOpenChanged = false;
 	bool bCloseRequestedWhileOpening = false;
-	/** Deferred close request raised while another close operation is in progress. */
 	bool bCloseRequestedWhileClosing = false;
 
-	/** Grants the Slate input preprocessor access to the guarded outside-click handler. */
+	/** @} */
+
 	friend class FLunarComboBoxOutsideClickInputProcessor;
-	/** Grants option adapters read-only access to their owning descriptor data. */
-	friend class ULunarComboBoxOptionItem;
 };

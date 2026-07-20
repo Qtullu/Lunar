@@ -21,7 +21,6 @@ class UVerticalBox;
 class UWidget;
 class ULunarNavigationSubsystem;
 class ULunarTabHeader;
-struct FLunarTabsRuntimeState;
 
 /**
  * Composite tab strip with stable IDs, independently selectable headers, and owned page lifetimes.
@@ -39,59 +38,99 @@ class LUNAR_API ULunarTabs : public ULunarNavigableWidget
 public:
 	/** Creates an empty Tabs control. @param ObjectInitializer Unreal object initializer. */
 	ULunarTabs(const FObjectInitializer& ObjectInitializer);
-	/** Releases non-UObject transition state and its GC references. */
-	virtual ~ULunarTabs() override;
 
-	/** Replaces descriptors and rebuilds generated headers and pages. @param NewTabs New tab descriptors. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Tabs")
-	void SetTabs(const TArray<FLunarTabDescriptor>& NewTabs);
+	/** Replaces descriptors and rebuilds generated headers and pages. @param NewTabs New tab descriptors. @param NotificationPolicy Whether to publish notifications if the active tab changes; defaults to Notify. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs", meta = (AdvancedDisplay = "NotificationPolicy"))
+	void SetTabs(const TArray<FLunarTabDescriptor>& NewTabs, ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
 
-	/** Activates an enabled tab by stable ID. @param TabId Stable tab ID. @return True when the tab is active. */
-	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Navigation|Tabs")
-	bool ActivateTabById(FName TabId);
+	/** Activates an enabled tab by stable ID. @param TabId Stable tab ID. @param NotificationPolicy Whether to publish normal change notifications; defaults to Notify. @return True when the tab is active. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs", meta = (AdvancedDisplay = "NotificationPolicy"))
+	bool ActivateTabById(FName TabId, ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
 
 	/** Returns the stable ID of the active page. @return Active tab ID, or NAME_None. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Tabs")
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	FName GetActiveTabId() const { return ActiveTabId; }
 
 	/** Returns a created page instance by stable tab ID. @param TabId Stable tab ID. @return Page widget, or null when not created. */
-	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Navigation|Tabs")
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	UUserWidget* GetPageWidgetById(FName TabId) const;
 
+	/** Sets the native active-indicator brush. @param NewBrush New indicator brush. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void SetActiveIndicatorBrush(const FSlateBrush& NewBrush);
+
+	/** Returns the native active-indicator brush. @return Current indicator brush. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	FSlateBrush GetActiveIndicatorBrush() const { return ActiveIndicatorBrush; }
+
+	/** Sets the native active-indicator tint. @param NewTint New indicator tint. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void SetActiveIndicatorTint(FLinearColor NewTint);
+
+	/** Returns the native active-indicator tint. @return Current indicator tint. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	FLinearColor GetActiveIndicatorTint() const { return ActiveIndicatorTint; }
+
+	/** Sets the native active-indicator desired size. @param NewSize New indicator size. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void SetActiveIndicatorSize(FVector2D NewSize);
+
+	/** Returns the native active-indicator desired size. @return Current indicator size. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	FVector2D GetActiveIndicatorSize() const { return ActiveIndicatorSize; }
+
+	/** Configures every native active-indicator value. @param NewBrush New brush. @param NewTint New tint. @param NewSize New desired size. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void ConfigureActiveIndicatorPresentation(const FSlateBrush& NewBrush, FLinearColor NewTint, FVector2D NewSize);
+
+	/** Returns every native active-indicator value. @param OutBrush Current brush. @param OutTint Current tint. @param OutSize Current desired size. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	void GetActiveIndicatorPresentation(FSlateBrush& OutBrush, FLinearColor& OutTint, FVector2D& OutSize) const;
+
+	/** Sets padding around the native page host. @param NewPadding New page padding. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void SetPagePresentationPadding(FMargin NewPadding);
+
+	/** Returns padding around the native page host. @return Current page padding. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	FMargin GetPagePresentationPadding() const { return PagePresentationPadding; }
+
+	/** Configures every native Tabs presentation value. @param NewBrush New indicator brush. @param NewTint New indicator tint. @param NewSize New indicator size. @param NewPagePadding New page padding. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
+	void ConfigureTabsPresentation(const FSlateBrush& NewBrush, FLinearColor NewTint, FVector2D NewSize, FMargin NewPagePadding);
+
+	/** Returns every cached native Tabs presentation value. @param OutBrush Current indicator brush. @param OutTint Current indicator tint. @param OutSize Current indicator size. @param OutPagePadding Current page padding. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs|Presentation")
+	void GetTabsPresentation(FSlateBrush& OutBrush, FLinearColor& OutTint, FVector2D& OutSize, FMargin& OutPagePadding) const;
 	/** Authored stable tab descriptors used to generate headers and pages. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs", meta = (ExposeOnSpawn = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs", meta = (ExposeOnSpawn = "true"))
 	TArray<FLunarTabDescriptor> TabDescriptors;
 
 	/** Stable ID of the active page. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	FName ActiveTabId = NAME_None;
 
 	/** Creation and retention policy applied to generated page widgets. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	ELunarTabPageLifetime PageLifetime = ELunarTabPageLifetime::LazyCached;
 
 	/** Horizontal places the strip above the page; Vertical places it to the left. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	TEnumAsByte<EOrientation> Orientation = Orient_Horizontal;
 
 	/** Broadcast after the active tab ID changes. */
-	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Navigation|Tabs")
+	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Tabs")
 	FLunarTabsActiveTabChangedSignature OnActiveTabChanged;
 
 protected:
 	/** Builds the owner-preserving native layout used by the tab strip and page host. @return Root Slate widget. */
 	virtual TSharedRef<SWidget> RebuildWidget() override;
-	/** Synchronizes descriptors, orientation, active page, and style state. */
+	/** Synchronizes descriptors, orientation, active page, and native presentation. */
 	virtual void SynchronizeProperties() override;
 	/** Initializes generated tab content after the widget enters the tree. */
 	virtual void NativeConstruct() override;
-	/** Applies deferred navigation and specialized style transitions. @param MyGeometry Cached widget geometry. @param InDeltaTime Elapsed seconds. */
+	/** Applies deferred navigation and page-selection capture. @param MyGeometry Cached widget geometry. @param InDeltaTime Elapsed seconds. */
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
-	/** Resolves common and Tabs-specific style layers. @param OutStyle Resolved common patch. @param OutError Actionable failure text. @return True on success. */
-	virtual bool ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const override;
-	/** Applies common style and refreshes Tabs-specific presentation targets. @param ResolvedStyle Resolved common style patch. */
-	virtual void ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle) override;
-
 private:
 	/** Validates stable IDs, classes, and descriptor consistency. @param Descriptors Descriptors to inspect. @param OutError Actionable failure text. @return True when valid. */
 	bool ValidateTabDescriptors(const TArray<FLunarTabDescriptor>& Descriptors, FString& OutError) const;
@@ -147,41 +186,9 @@ private:
 	void GatherPageNavigableDescendants(UUserWidget* Page, TArray<ULunarNavigableWidget*>& OutWidgets) const;
 	/** Tests whether a widget belongs to a generated page subtree. @param Widget Candidate widget. @param Page Page root. @return True when contained. */
 	bool IsWidgetInsidePage(const UWidget* Widget, const UUserWidget* Page) const;
-	/** Resolves a header visual state through Tabs and instance style layers. @param HeaderVisualState Header state flags. @param HeaderInstanceOverrides Header-specific overrides. @param OutCommonStyle Resolved common style. @param OutTabsStyle Optional resolved Tabs patch. @param OutError Actionable failure text. @return True on success. */
-	bool ResolveHeaderStyle(
-		const FLunarUIVisualState& HeaderVisualState,
-		const FLunarCommonStylePatch& HeaderInstanceOverrides,
-		FLunarCommonStylePatch& OutCommonStyle,
-		FLunarTabsStylePatch* OutTabsStyle,
-		FString& OutError) const;
-	/** Applies resolved common and specialized style to one generated header. @param Header Header widget. @param HeaderVisualState Header state flags. */
-	void ApplyHeaderPresentation(ULunarTabHeader* Header, const FLunarUIVisualState& HeaderVisualState);
-	/** Updates the indicator transition target for a tab. @param TabId Stable tab ID. @param NewTarget New Tabs style target. @param bReduceMotion Whether to apply immediately. */
-	void SetHeaderIndicatorStyleTarget(
-		FName TabId,
-		const FLunarTabsStylePatch& NewTarget,
-		bool bReduceMotion);
-	/** Updates the page-padding transition target. @param NewTarget New Tabs style target. @param bReduceMotion Whether to apply immediately. */
-	void SetPagePaddingStyleTarget(
-		const FLunarTabsStylePatch& NewTarget,
-		bool bReduceMotion);
-	/** Applies indicator style without interpolation. @param TabId Stable tab ID. @param NewStyle Style to display. */
-	void ApplyImmediateIndicatorStyle(FName TabId, const FLunarTabsStylePatch& NewStyle);
-	/** Applies page padding without interpolation. @param NewStyle Style to display. */
-	void ApplyImmediatePagePaddingStyle(const FLunarTabsStylePatch& NewStyle);
-	/** Advances all Tabs-specific visual transitions. @param InDeltaTime Elapsed seconds. */
-	void TickSpecializedStyleTransitions(float InDeltaTime);
-	/** Advances one header-indicator transition. @param TabId Stable tab ID. @param InDeltaTime Elapsed seconds. */
-	void TickHeaderIndicatorTransition(FName TabId, float InDeltaTime);
-	/** Advances the active page-padding transition. @param InDeltaTime Elapsed seconds. */
-	void TickPagePaddingTransition(float InDeltaTime);
-	/** Presents an interpolated indicator style. @param TabId Stable tab ID. @param DisplayedStyle Interpolated style. */
-	void ApplyDisplayedIndicatorStyle(
-		FName TabId,
-		const FLunarTabsStylePatch& DisplayedStyle) const;
-	/** Presents interpolated page padding. @param DisplayedStyle Interpolated style. */
-	void ApplyDisplayedPagePaddingStyle(const FLunarTabsStylePatch& DisplayedStyle) const;
-	/** Re-resolves and presents every generated header's current visual state. */
+	/** Applies cached presentation to native indicators and page hosts. */
+	void ApplyNativePresentation();
+	/** Refreshes every generated header visual state and native indicator. */
 	void RefreshAllHeaderPresentations();
 	/** Reports an actionable Tabs configuration or runtime error. @param Message Error text. */
 	void ReportTabsError(const FString& Message) const;
@@ -212,18 +219,22 @@ private:
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UOverlay>> HeaderWrappers;
 	/** Generated indicator images indexed by stable tab ID. */
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UImage>> HeaderIndicators;
+	/** Cached native active-indicator brush reapplied after hierarchy reconstruction. */
+	UPROPERTY(Transient) FSlateBrush ActiveIndicatorBrush;
+	/** Cached native active-indicator tint reapplied after hierarchy reconstruction. */
+	UPROPERTY(Transient) FLinearColor ActiveIndicatorTint = FLinearColor::White;
+	/** Cached native active-indicator desired size. */
+	UPROPERTY(Transient) FVector2D ActiveIndicatorSize = FVector2D::ZeroVector;
+	/** Cached native page-host padding. */
+	UPROPERTY(Transient) FMargin PagePresentationPadding;
 	/** Created page widgets indexed by stable tab ID. */
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UUserWidget>> PageWidgets;
 	/** Last selected descendant ID retained independently for each page. */
 	UPROPERTY(Transient) TMap<FName, FName> LastPageDescendantNavigationIds;
-	/** Last successfully resolved Tabs-specific style. */
-	UPROPERTY(Transient) FLunarTabsStylePatch ResolvedTabsStyle;
 	/** Header that initiated the deferred composite navigation request. */
 	UPROPERTY(Transient) TWeakObjectPtr<ULunarTabHeader> PendingHeaderNavigationSource;
 	/** Resolved destination for deferred composite navigation. */
 	UPROPERTY(Transient) TWeakObjectPtr<ULunarNavigableWidget> PendingHeaderNavigationTarget;
-	/** Heap-owned transition state that reports its UObject references to GC. */
-	FLunarTabsRuntimeState* RuntimeState = nullptr;
 
 	/** Orientation currently represented by the generated hierarchy. */
 	TEnumAsByte<EOrientation> AppliedOrientation = Orient_Horizontal;

@@ -2,7 +2,7 @@
 
 /**
  * @file LunarTabs.cpp
- * @brief Implements generated tab layout, page lifetime, composite navigation, and style transitions.
+ * @brief Implements generated tab layout, page lifetime, composite navigation, and native presentation.
  * @ingroup LunarNavigationControls
  */
 
@@ -19,165 +19,17 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/LocalPlayer.h"
-#include "Kismet/KismetMathLibrary.h"
-#include "Styling/StyleDefaults.h"
 #include "Subsystems/Console/LunarConsoleSubsystem.h"
 #include "UI/Navigation/Controls/LunarTabHeader.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
-#include "UI/Navigation/Styles/LunarStyleResolver.h"
-#include "UObject/GCObject.h"
 #include "Widgets/SWidget.h"
 
 /** Private log channel for actionable Tabs configuration and creation failures. */
 DEFINE_LOG_CATEGORY_STATIC(LogLunarTabs, Log, All);
 
-/**
- * Non-UObject transition storage that explicitly reports Slate-brush UObject resources to GC.
- * @ingroup LunarNavigationControls
- */
-struct FLunarTabsRuntimeState final : FGCObject
-{
-	/** Mutable state for one independently animated Tabs style channel. */
-	struct FTransitionState
-	{
-		/** Style currently visible to the user. */
-		FLunarTabsStylePatch DisplayedStyle;
-		/** Style captured when the active transition began. */
-		FLunarTabsStylePatch TransitionSourceStyle;
-		/** Materialized style reached by the active transition. */
-		FLunarTabsStylePatch TransitionTargetStyle;
-		/** Latest logical target, retained separately for reversal decisions. */
-		FLunarTabsStylePatch LogicalTargetStyle;
-		/** Seconds elapsed in the active transition. */
-		float TransitionElapsed = 0.0f;
-		/** Total duration of the active transition in seconds. */
-		float TransitionDuration = 0.0f;
-		/** Whether DisplayedStyle has been initialized. */
-		bool bHasDisplayedStyle = false;
-		/** Whether interpolation is currently active. */
-		bool bTransitionActive = false;
-		/** Whether the active transition reversed toward a previous target. */
-		bool bTransitionReversing = false;
-	};
-
-	/** Per-tab active-indicator transition channels. */
-	TMap<FName, FTransitionState> HeaderIndicatorTransitions;
-	/** Shared transition channel for the active page host padding. */
-	FTransitionState PagePaddingTransition;
-
-	/** Reports brush resource objects retained by transition snapshots. @param Collector Active GC reference collector. */
-	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
-	{
-		auto AddStyleBrush = [&Collector](FLunarTabsStylePatch& Style)
-		{
-			TObjectPtr<UObject> ResourceObject = Style.ActiveIndicatorBrush.GetResourceObject();
-			if (ResourceObject)
-			{
-				Collector.AddReferencedObject(ResourceObject);
-				Style.ActiveIndicatorBrush.SetResourceObject(ResourceObject.Get());
-			}
-		};
-		auto AddStateBrushes = [&AddStyleBrush](FTransitionState& State)
-		{
-			AddStyleBrush(State.DisplayedStyle);
-			AddStyleBrush(State.TransitionSourceStyle);
-			AddStyleBrush(State.TransitionTargetStyle);
-			AddStyleBrush(State.LogicalTargetStyle);
-		};
-
-		for (TPair<FName, FTransitionState>& Pair : HeaderIndicatorTransitions)
-		{
-			AddStateBrushes(Pair.Value);
-		}
-		AddStateBrushes(PagePaddingTransition);
-	}
-
-	/** Returns a stable diagnostic name for Unreal's GC reference graph. @return Referencer name. */
-	virtual FString GetReferencerName() const override
-	{
-		return TEXT("FLunarTabsRuntimeState");
-	}
-};
-
-/** Private style, construction, and UMG hierarchy helpers for ULunarTabs. */
+/** Private construction and UMG hierarchy helpers for ULunarTabs. */
 namespace LunarTabs_Private
 {
-	/** Compares transition settings used by specialized style channels. @param A First settings. @param B Second settings. @return True when equivalent. */
-	bool AreTransitionsEquivalent(
-		const FLunarStyleTransitionSettings& A,
-		const FLunarStyleTransitionSettings& B)
-	{
-		return A.bEnabled == B.bEnabled
-			&& A.Duration == B.Duration
-			&& A.Easing == B.Easing;
-	}
-
-	/** Materializes indicator defaults so interpolation never depends on sparse fields. @param Style Sparse style. @return Complete indicator style. */
-	FLunarTabsStylePatch MaterializeIndicatorStyle(const FLunarTabsStylePatch& Style)
-	{
-		FLunarTabsStylePatch Result;
-		Result.bOverrideActiveIndicatorBrush = true;
-		Result.ActiveIndicatorBrush = Style.bOverrideActiveIndicatorBrush
-			? Style.ActiveIndicatorBrush
-			: *FStyleDefaults::GetNoBrush();
-		Result.bOverrideActiveIndicatorTint = true;
-		Result.ActiveIndicatorTint = Style.bOverrideActiveIndicatorTint
-			? Style.ActiveIndicatorTint
-			: FLinearColor::White;
-		Result.Common.Transition = Style.Common.Transition;
-		return Result;
-	}
-
-	/** Materializes page-padding defaults so interpolation never depends on sparse fields. @param Style Sparse style. @return Complete page-padding style. */
-	FLunarTabsStylePatch MaterializePagePaddingStyle(const FLunarTabsStylePatch& Style)
-	{
-		FLunarTabsStylePatch Result;
-		Result.bOverridePagePadding = true;
-		Result.PagePadding = Style.bOverridePagePadding
-			? Style.PagePadding
-			: FMargin(0.0f);
-		Result.Common.Transition = Style.Common.Transition;
-		return Result;
-	}
-
-	/** Compares complete indicator visuals and transition settings. @param A First style. @param B Second style. @return True when equivalent. */
-	bool AreIndicatorStylesEquivalent(
-		const FLunarTabsStylePatch& A,
-		const FLunarTabsStylePatch& B)
-	{
-		return A.ActiveIndicatorBrush == B.ActiveIndicatorBrush
-			&& A.ActiveIndicatorTint == B.ActiveIndicatorTint
-			&& AreTransitionsEquivalent(A.Common.Transition, B.Common.Transition);
-	}
-
-	/** Compares only currently visible indicator fields. @param A First style. @param B Second style. @return True when visually equivalent. */
-	bool AreIndicatorVisualsEquivalent(
-		const FLunarTabsStylePatch& A,
-		const FLunarTabsStylePatch& B)
-	{
-		return A.ActiveIndicatorBrush == B.ActiveIndicatorBrush
-			&& A.ActiveIndicatorTint == B.ActiveIndicatorTint;
-	}
-
-	/** Compares page padding and its transition settings. @param A First style. @param B Second style. @return True when equivalent. */
-	bool ArePagePaddingStylesEquivalent(
-		const FLunarTabsStylePatch& A,
-		const FLunarTabsStylePatch& B)
-	{
-		return A.PagePadding == B.PagePadding
-			&& AreTransitionsEquivalent(A.Common.Transition, B.Common.Transition);
-	}
-
-	/** Interpolates all four margin components. @param Source Starting margin. @param Target Target margin. @param Alpha Normalized blend alpha. @return Interpolated margin. */
-	FMargin InterpolateMargin(const FMargin& Source, const FMargin& Target, const float Alpha)
-	{
-		return FMargin(
-			FMath::Lerp(Source.Left, Target.Left, Alpha),
-			FMath::Lerp(Source.Top, Target.Top, Alpha),
-			FMath::Lerp(Source.Right, Target.Right, Alpha),
-			FMath::Lerp(Source.Bottom, Target.Bottom, Alpha));
-	}
-
 	/** Creates an owner-associated UserWidget page or header. @param Tabs Owning Tabs widget. @param WidgetClass Class to instantiate. @return New widget, or null. */
 	UUserWidget* CreateUserWidgetForTabs(const ULunarTabs* Tabs, const TSubclassOf<UUserWidget> WidgetClass)
 	{
@@ -206,24 +58,90 @@ namespace LunarTabs_Private
 		return nullptr;
 	}
 }
-
 ULunarTabs::ULunarTabs(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, RuntimeState(new FLunarTabsRuntimeState())
 {
 	bCanReceiveLunarSelection = false;
 	bCanInteractWithPointer = false;
+	bAllowTouchInput = false;
 	bEnableInputPrompt = false;
+	ActiveIndicatorBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
 }
 
-ULunarTabs::~ULunarTabs()
+void ULunarTabs::SetActiveIndicatorBrush(const FSlateBrush& NewBrush)
 {
-	delete RuntimeState;
-	RuntimeState = nullptr;
+	ActiveIndicatorBrush = NewBrush;
+	ApplyNativePresentation();
 }
 
-void ULunarTabs::SetTabs(const TArray<FLunarTabDescriptor>& NewTabs)
+void ULunarTabs::SetActiveIndicatorTint(const FLinearColor NewTint)
 {
+	ActiveIndicatorTint = NewTint;
+	ApplyNativePresentation();
+}
+
+void ULunarTabs::SetActiveIndicatorSize(const FVector2D NewSize)
+{
+	ActiveIndicatorSize = FVector2D(FMath::Max(0.0f, NewSize.X), FMath::Max(0.0f, NewSize.Y));
+	ApplyNativePresentation();
+}
+
+void ULunarTabs::ConfigureActiveIndicatorPresentation(
+	const FSlateBrush& NewBrush,
+	const FLinearColor NewTint,
+	const FVector2D NewSize)
+{
+	ActiveIndicatorBrush = NewBrush;
+	ActiveIndicatorTint = NewTint;
+	ActiveIndicatorSize = FVector2D(FMath::Max(0.0f, NewSize.X), FMath::Max(0.0f, NewSize.Y));
+	ApplyNativePresentation();
+}
+
+void ULunarTabs::GetActiveIndicatorPresentation(
+	FSlateBrush& OutBrush,
+	FLinearColor& OutTint,
+	FVector2D& OutSize) const
+{
+	OutBrush = ActiveIndicatorBrush;
+	OutTint = ActiveIndicatorTint;
+	OutSize = ActiveIndicatorSize;
+}
+
+void ULunarTabs::SetPagePresentationPadding(const FMargin NewPadding)
+{
+	PagePresentationPadding = NewPadding;
+	ApplyNativePresentation();
+}
+
+void ULunarTabs::ConfigureTabsPresentation(
+	const FSlateBrush& NewBrush,
+	const FLinearColor NewTint,
+	const FVector2D NewSize,
+	const FMargin NewPagePadding)
+{
+	ActiveIndicatorBrush = NewBrush;
+	ActiveIndicatorTint = NewTint;
+	ActiveIndicatorSize = FVector2D(FMath::Max(0.0f, NewSize.X), FMath::Max(0.0f, NewSize.Y));
+	PagePresentationPadding = NewPagePadding;
+	ApplyNativePresentation();
+}
+
+void ULunarTabs::GetTabsPresentation(
+	FSlateBrush& OutBrush,
+	FLinearColor& OutTint,
+	FVector2D& OutSize,
+	FMargin& OutPagePadding) const
+{
+	OutBrush = ActiveIndicatorBrush;
+	OutTint = ActiveIndicatorTint;
+	OutSize = ActiveIndicatorSize;
+	OutPagePadding = PagePresentationPadding;
+}
+void ULunarTabs::SetTabs(
+	const TArray<FLunarTabDescriptor>& NewTabs,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
+{
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	TArray<FLunarTabDescriptor> RequestedTabs = NewTabs;
 	FString ValidationError;
 	if (!ValidateTabDescriptors(RequestedTabs, ValidationError))
@@ -253,9 +171,9 @@ void ULunarTabs::SetTabs(const TArray<FLunarTabDescriptor>& NewTabs)
 	{
 		ActiveTabId = NAME_None;
 		bTabsInitialized = true;
-		if (PreviousActiveTabId != ActiveTabId)
+		if (bNotify && PreviousActiveTabId != ActiveTabId)
 		{
-			OnActiveTabChanged.Broadcast(PreviousActiveTabId, ActiveTabId);
+			OnActiveTabChanged.Broadcast(this, PreviousActiveTabId, ActiveTabId);
 		}
 		return;
 	}
@@ -271,7 +189,7 @@ void ULunarTabs::SetTabs(const TArray<FLunarTabDescriptor>& NewTabs)
 	ActiveTabId = NAME_None;
 	if (!InitialTabId.IsNone())
 	{
-		ActivateTabByIdInternal(InitialTabId, true, false);
+		ActivateTabByIdInternal(InitialTabId, bNotify, false);
 	}
 	else
 	{
@@ -279,9 +197,9 @@ void ULunarTabs::SetTabs(const TArray<FLunarTabDescriptor>& NewTabs)
 	}
 
 	bTabsInitialized = true;
-	if (PreviousActiveTabId != ActiveTabId)
+	if (bNotify && PreviousActiveTabId != ActiveTabId)
 	{
-		OnActiveTabChanged.Broadcast(PreviousActiveTabId, ActiveTabId);
+		OnActiveTabChanged.Broadcast(this, PreviousActiveTabId, ActiveTabId);
 	}
 
 	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
@@ -290,14 +208,17 @@ void ULunarTabs::SetTabs(const TArray<FLunarTabDescriptor>& NewTabs)
 	}
 }
 
-bool ULunarTabs::ActivateTabById(const FName TabId)
+bool ULunarTabs::ActivateTabById(
+	const FName TabId,
+	const ELunarChangeNotificationPolicy NotificationPolicy)
 {
+	const bool bNotify = NotificationPolicy == ELunarChangeNotificationPolicy::Notify;
 	if (!bTabsInitialized)
 	{
 		const TArray<FLunarTabDescriptor> InitialDescriptors = TabDescriptors;
-		SetTabs(InitialDescriptors);
+		SetTabs(InitialDescriptors, ELunarChangeNotificationPolicy::Silent);
 	}
-	return ActivateTabByIdInternal(TabId, true, true);
+	return ActivateTabByIdInternal(TabId, bNotify, bNotify);
 }
 
 UUserWidget* ULunarTabs::GetPageWidgetById(const FName TabId) const
@@ -320,6 +241,7 @@ void ULunarTabs::SynchronizeProperties()
 	Super::SynchronizeProperties();
 	EnsureNativeLayout();
 	ApplyOrientation();
+	ApplyNativePresentation();
 }
 
 void ULunarTabs::NativeConstruct()
@@ -329,7 +251,7 @@ void ULunarTabs::NativeConstruct()
 	if (!bTabsInitialized)
 	{
 		const TArray<FLunarTabDescriptor> InitialDescriptors = TabDescriptors;
-		SetTabs(InitialDescriptors);
+		SetTabs(InitialDescriptors, ELunarChangeNotificationPolicy::Silent);
 	}
 	else
 	{
@@ -349,37 +271,8 @@ void ULunarTabs::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime
 	{
 		ApplyOrientation();
 	}
-	TickSpecializedStyleTransitions(InDeltaTime);
 	ApplyPendingHeaderNavigation();
 	CaptureActivePageSelection();
-}
-
-bool ULunarTabs::ResolveCommonStylePatch(FLunarCommonStylePatch& OutStyle, FString& OutError) const
-{
-	FLunarTabsStylePatch ResolvedStyle;
-	if (!LunarStyleResolver::ResolveTabsStyle(
-		StyleAsset,
-		GetLunarVisualState(),
-		StyleOverrides,
-		ResolvedStyle,
-		&OutError))
-	{
-		return false;
-	}
-
-	ULunarTabs* MutableThis = const_cast<ULunarTabs*>(this);
-	MutableThis->ResolvedTabsStyle = ResolvedStyle;
-	OutStyle = ResolvedStyle.Common;
-	return true;
-}
-
-void ULunarTabs::ApplyResolvedCommonStyle(const FLunarCommonStylePatch& ResolvedStyle)
-{
-	Super::ApplyResolvedCommonStyle(ResolvedStyle);
-	SetPagePaddingStyleTarget(
-		LunarTabs_Private::MaterializePagePaddingStyle(ResolvedTabsStyle),
-		GetLunarVisualState().bReduceMotion);
-	RefreshAllHeaderPresentations();
 }
 
 bool ULunarTabs::ValidateTabDescriptors(
@@ -526,12 +419,9 @@ void ULunarTabs::EnsureNativeLayout()
 	}
 
 	bNativeLayoutInitialized = true;
-	if (RuntimeState->PagePaddingTransition.bHasDisplayedStyle)
-	{
-		ApplyDisplayedPagePaddingStyle(RuntimeState->PagePaddingTransition.DisplayedStyle);
-	}
 	AppliedOrientation = Orientation;
 	ApplyOrientation();
+	ApplyNativePresentation();
 }
 
 void ULunarTabs::ApplyOrientation()
@@ -615,7 +505,6 @@ void ULunarTabs::ResetGeneratedTabs()
 	HeaderWidgets.Reset();
 	HeaderWrappers.Reset();
 	HeaderIndicators.Reset();
-	RuntimeState->HeaderIndicatorTransitions.Reset();
 	PageWidgets.Reset();
 	LastPageDescendantNavigationIds.Reset();
 	PendingHeaderNavigationSource.Reset();
@@ -821,6 +710,7 @@ bool ULunarTabs::ActivateTabByIdInternal(
 			Pair.Value->SetActiveTabHeader(Pair.Key == ActiveTabId);
 		}
 	}
+	ApplyNativePresentation();
 
 	if (NavigationSubsystem)
 	{
@@ -834,7 +724,7 @@ bool ULunarTabs::ActivateTabByIdInternal(
 	bActivationInProgress = false;
 	if (bBroadcastChange && PreviousTabId != ActiveTabId)
 	{
-		OnActiveTabChanged.Broadcast(PreviousTabId, ActiveTabId);
+		OnActiveTabChanged.Broadcast(this, PreviousTabId, ActiveTabId);
 	}
 	return true;
 }
@@ -1121,353 +1011,32 @@ bool ULunarTabs::IsWidgetInsidePage(const UWidget* Widget, const UUserWidget* Pa
 	}
 	return false;
 }
-
-bool ULunarTabs::ResolveHeaderStyle(
-	const FLunarUIVisualState& HeaderVisualState,
-	const FLunarCommonStylePatch& HeaderInstanceOverrides,
-	FLunarCommonStylePatch& OutCommonStyle,
-	FLunarTabsStylePatch* OutTabsStyle,
-	FString& OutError) const
+void ULunarTabs::ApplyNativePresentation()
 {
-	FLunarTabsStylePatch HeaderTabsStyle;
-	if (!LunarStyleResolver::ResolveTabsStyle(
-		StyleAsset,
-		HeaderVisualState,
-		StyleOverrides,
-		HeaderTabsStyle,
-		&OutError))
+	for (const TPair<FName, TObjectPtr<UImage>>& Pair : HeaderIndicators)
 	{
-		return false;
-	}
-
-	OutCommonStyle = HeaderTabsStyle.HeaderStyle.Common;
-	LunarStyleResolver::MergeCommonStylePatch(OutCommonStyle, HeaderInstanceOverrides);
-	if (OutTabsStyle)
-	{
-		*OutTabsStyle = HeaderTabsStyle;
-	}
-	return true;
-}
-
-void ULunarTabs::ApplyHeaderPresentation(
-	ULunarTabHeader* Header,
-	const FLunarUIVisualState& HeaderVisualState)
-{
-	if (!Header)
-	{
-		return;
-	}
-	UImage* Indicator = HeaderIndicators.FindRef(Header->TabId);
-	if (!Indicator)
-	{
-		return;
-	}
-	Indicator->SetVisibility(Header->bActiveTabHeader
-		? ESlateVisibility::HitTestInvisible
-		: ESlateVisibility::Collapsed);
-
-	FLunarCommonStylePatch HeaderCommonStyle;
-	FLunarTabsStylePatch HeaderTabsStyle;
-	FString StyleError;
-	if (!ResolveHeaderStyle(
-		HeaderVisualState,
-		FLunarCommonStylePatch(),
-		HeaderCommonStyle,
-		&HeaderTabsStyle,
-		StyleError))
-	{
-		return;
-	}
-
-	SetHeaderIndicatorStyleTarget(
-		Header->TabId,
-		LunarTabs_Private::MaterializeIndicatorStyle(HeaderTabsStyle),
-		HeaderVisualState.bReduceMotion);
-}
-
-void ULunarTabs::SetHeaderIndicatorStyleTarget(
-	const FName TabId,
-	const FLunarTabsStylePatch& NewTarget,
-	const bool bReduceMotion)
-{
-	if (!HeaderIndicators.FindRef(TabId))
-	{
-		return;
-	}
-
-	FLunarTabsRuntimeState::FTransitionState& State =
-		RuntimeState->HeaderIndicatorTransitions.FindOrAdd(TabId);
-	if (!State.bHasDisplayedStyle || bReduceMotion)
-	{
-		ApplyImmediateIndicatorStyle(TabId, NewTarget);
-		return;
-	}
-	if (LunarTabs_Private::AreIndicatorStylesEquivalent(State.LogicalTargetStyle, NewTarget))
-	{
-		// Reapply even for an unchanged target: the UImage may have been rebuilt or
-		// an assigned style asset may have been reset without a visual-state change.
-		ApplyDisplayedIndicatorStyle(TabId, State.DisplayedStyle);
-		return;
-	}
-
-	if (State.bTransitionActive)
-	{
-		const bool bReturnsToSource = !State.bTransitionReversing
-			&& LunarTabs_Private::AreIndicatorStylesEquivalent(State.TransitionSourceStyle, NewTarget);
-		const bool bReturnsToForwardTarget = State.bTransitionReversing
-			&& LunarTabs_Private::AreIndicatorStylesEquivalent(State.TransitionTargetStyle, NewTarget);
-		if (bReturnsToSource || bReturnsToForwardTarget)
+		UImage* Indicator = Pair.Value;
+		const ULunarTabHeader* Header = HeaderWidgets.FindRef(Pair.Key);
+		if (!Indicator)
 		{
-			State.LogicalTargetStyle = NewTarget;
-			State.bTransitionReversing = bReturnsToSource;
-			State.DisplayedStyle.ActiveIndicatorBrush = NewTarget.ActiveIndicatorBrush;
-			State.DisplayedStyle.Common.Transition = NewTarget.Common.Transition;
-			ApplyDisplayedIndicatorStyle(TabId, State.DisplayedStyle);
-			return;
+			continue;
 		}
+		Indicator->SetBrush(ActiveIndicatorBrush);
+		Indicator->SetColorAndOpacity(ActiveIndicatorTint);
+		Indicator->SetDesiredSizeOverride(ActiveIndicatorSize);
+		Indicator->SetVisibility(Header && Header->bActiveTabHeader
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
 	}
-
-	if (!NewTarget.Common.Transition.bEnabled
-		|| NewTarget.Common.Transition.Duration <= 0.0f
-		|| LunarTabs_Private::AreIndicatorVisualsEquivalent(State.DisplayedStyle, NewTarget))
-	{
-		ApplyImmediateIndicatorStyle(TabId, NewTarget);
-		return;
-	}
-
-	State.TransitionSourceStyle = State.DisplayedStyle;
-	State.TransitionTargetStyle = NewTarget;
-	State.LogicalTargetStyle = NewTarget;
-	State.TransitionElapsed = 0.0f;
-	State.TransitionDuration = NewTarget.Common.Transition.Duration;
-	State.bTransitionActive = true;
-	State.bTransitionReversing = false;
-	// Brushes are discrete. Apply the new logical target immediately while tint
-	// interpolation starts from the exact currently displayed snapshot.
-	State.DisplayedStyle.ActiveIndicatorBrush = NewTarget.ActiveIndicatorBrush;
-	State.DisplayedStyle.Common.Transition = NewTarget.Common.Transition;
-	ApplyDisplayedIndicatorStyle(TabId, State.DisplayedStyle);
-}
-
-void ULunarTabs::SetPagePaddingStyleTarget(
-	const FLunarTabsStylePatch& NewTarget,
-	const bool bReduceMotion)
-{
-	FLunarTabsRuntimeState::FTransitionState& State = RuntimeState->PagePaddingTransition;
-	if (!State.bHasDisplayedStyle || bReduceMotion)
-	{
-		ApplyImmediatePagePaddingStyle(NewTarget);
-		return;
-	}
-	if (LunarTabs_Private::ArePagePaddingStylesEquivalent(State.LogicalTargetStyle, NewTarget))
-	{
-		ApplyDisplayedPagePaddingStyle(State.DisplayedStyle);
-		return;
-	}
-
-	if (State.bTransitionActive)
-	{
-		const bool bReturnsToSource = !State.bTransitionReversing
-			&& LunarTabs_Private::ArePagePaddingStylesEquivalent(State.TransitionSourceStyle, NewTarget);
-		const bool bReturnsToForwardTarget = State.bTransitionReversing
-			&& LunarTabs_Private::ArePagePaddingStylesEquivalent(State.TransitionTargetStyle, NewTarget);
-		if (bReturnsToSource || bReturnsToForwardTarget)
-		{
-			State.LogicalTargetStyle = NewTarget;
-			State.bTransitionReversing = bReturnsToSource;
-			State.DisplayedStyle.Common.Transition = NewTarget.Common.Transition;
-			ApplyDisplayedPagePaddingStyle(State.DisplayedStyle);
-			return;
-		}
-	}
-
-	if (!NewTarget.Common.Transition.bEnabled
-		|| NewTarget.Common.Transition.Duration <= 0.0f
-		|| State.DisplayedStyle.PagePadding == NewTarget.PagePadding)
-	{
-		ApplyImmediatePagePaddingStyle(NewTarget);
-		return;
-	}
-
-	State.TransitionSourceStyle = State.DisplayedStyle;
-	State.TransitionTargetStyle = NewTarget;
-	State.LogicalTargetStyle = NewTarget;
-	State.TransitionElapsed = 0.0f;
-	State.TransitionDuration = NewTarget.Common.Transition.Duration;
-	State.bTransitionActive = true;
-	State.bTransitionReversing = false;
-	State.DisplayedStyle.Common.Transition = NewTarget.Common.Transition;
-	ApplyDisplayedPagePaddingStyle(State.DisplayedStyle);
-}
-
-void ULunarTabs::ApplyImmediateIndicatorStyle(
-	const FName TabId,
-	const FLunarTabsStylePatch& NewStyle)
-{
-	FLunarTabsRuntimeState::FTransitionState& State =
-		RuntimeState->HeaderIndicatorTransitions.FindOrAdd(TabId);
-	State.DisplayedStyle = NewStyle;
-	State.TransitionSourceStyle = NewStyle;
-	State.TransitionTargetStyle = NewStyle;
-	State.LogicalTargetStyle = NewStyle;
-	State.TransitionElapsed = 0.0f;
-	State.TransitionDuration = 0.0f;
-	State.bHasDisplayedStyle = true;
-	State.bTransitionActive = false;
-	State.bTransitionReversing = false;
-	ApplyDisplayedIndicatorStyle(TabId, State.DisplayedStyle);
-}
-
-void ULunarTabs::ApplyImmediatePagePaddingStyle(const FLunarTabsStylePatch& NewStyle)
-{
-	FLunarTabsRuntimeState::FTransitionState& State = RuntimeState->PagePaddingTransition;
-	State.DisplayedStyle = NewStyle;
-	State.TransitionSourceStyle = NewStyle;
-	State.TransitionTargetStyle = NewStyle;
-	State.LogicalTargetStyle = NewStyle;
-	State.TransitionElapsed = 0.0f;
-	State.TransitionDuration = 0.0f;
-	State.bHasDisplayedStyle = true;
-	State.bTransitionActive = false;
-	State.bTransitionReversing = false;
-	ApplyDisplayedPagePaddingStyle(State.DisplayedStyle);
-}
-
-void ULunarTabs::TickSpecializedStyleTransitions(const float InDeltaTime)
-{
-	if (GetLunarVisualState().bReduceMotion)
-	{
-		if (RuntimeState->PagePaddingTransition.bTransitionActive)
-		{
-			const FLunarTabsStylePatch LogicalTarget =
-				RuntimeState->PagePaddingTransition.LogicalTargetStyle;
-			ApplyImmediatePagePaddingStyle(LogicalTarget);
-		}
-		for (TPair<FName, FLunarTabsRuntimeState::FTransitionState>& Pair :
-			RuntimeState->HeaderIndicatorTransitions)
-		{
-			if (Pair.Value.bTransitionActive)
-			{
-				const FLunarTabsStylePatch LogicalTarget = Pair.Value.LogicalTargetStyle;
-				ApplyImmediateIndicatorStyle(Pair.Key, LogicalTarget);
-			}
-		}
-		return;
-	}
-
-	TickPagePaddingTransition(InDeltaTime);
-	for (const TPair<FName, FLunarTabsRuntimeState::FTransitionState>& Pair :
-		RuntimeState->HeaderIndicatorTransitions)
-	{
-		TickHeaderIndicatorTransition(Pair.Key, InDeltaTime);
-	}
-}
-
-void ULunarTabs::TickHeaderIndicatorTransition(
-	const FName TabId,
-	const float InDeltaTime)
-{
-	FLunarTabsRuntimeState::FTransitionState* StatePointer =
-		RuntimeState->HeaderIndicatorTransitions.Find(TabId);
-	if (!StatePointer || !StatePointer->bTransitionActive)
-	{
-		return;
-	}
-	FLunarTabsRuntimeState::FTransitionState& State = *StatePointer;
-
-	const float TransitionDelta = FMath::Max(0.0f, InDeltaTime);
-	State.TransitionElapsed += State.bTransitionReversing ? -TransitionDelta : TransitionDelta;
-	State.TransitionElapsed = FMath::Clamp(
-		State.TransitionElapsed,
-		0.0f,
-		State.TransitionDuration);
-	const float Alpha = State.TransitionDuration > 0.0f
-		? State.TransitionElapsed / State.TransitionDuration
-		: 1.0f;
-	const float EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-		0.0,
-		1.0,
-		Alpha,
-		State.TransitionTargetStyle.Common.Transition.Easing));
-
-	State.DisplayedStyle.ActiveIndicatorBrush = State.LogicalTargetStyle.ActiveIndicatorBrush;
-	State.DisplayedStyle.ActiveIndicatorTint = FMath::Lerp(
-		State.TransitionSourceStyle.ActiveIndicatorTint,
-		State.TransitionTargetStyle.ActiveIndicatorTint,
-		EasedAlpha);
-	State.DisplayedStyle.Common.Transition = State.LogicalTargetStyle.Common.Transition;
-	const bool bFinished = State.bTransitionReversing ? Alpha <= 0.0f : Alpha >= 1.0f;
-	if (bFinished)
-	{
-		State.DisplayedStyle = State.LogicalTargetStyle;
-		State.bTransitionActive = false;
-		State.bTransitionReversing = false;
-	}
-	ApplyDisplayedIndicatorStyle(TabId, State.DisplayedStyle);
-}
-
-void ULunarTabs::TickPagePaddingTransition(const float InDeltaTime)
-{
-	FLunarTabsRuntimeState::FTransitionState& State = RuntimeState->PagePaddingTransition;
-	if (!State.bTransitionActive)
-	{
-		return;
-	}
-
-	const float TransitionDelta = FMath::Max(0.0f, InDeltaTime);
-	State.TransitionElapsed += State.bTransitionReversing ? -TransitionDelta : TransitionDelta;
-	State.TransitionElapsed = FMath::Clamp(
-		State.TransitionElapsed,
-		0.0f,
-		State.TransitionDuration);
-	const float Alpha = State.TransitionDuration > 0.0f
-		? State.TransitionElapsed / State.TransitionDuration
-		: 1.0f;
-	const float EasedAlpha = static_cast<float>(UKismetMathLibrary::Ease(
-		0.0,
-		1.0,
-		Alpha,
-		State.TransitionTargetStyle.Common.Transition.Easing));
-
-	State.DisplayedStyle.PagePadding = LunarTabs_Private::InterpolateMargin(
-		State.TransitionSourceStyle.PagePadding,
-		State.TransitionTargetStyle.PagePadding,
-		EasedAlpha);
-	State.DisplayedStyle.Common.Transition = State.LogicalTargetStyle.Common.Transition;
-	const bool bFinished = State.bTransitionReversing ? Alpha <= 0.0f : Alpha >= 1.0f;
-	if (bFinished)
-	{
-		State.DisplayedStyle = State.LogicalTargetStyle;
-		State.bTransitionActive = false;
-		State.bTransitionReversing = false;
-	}
-	ApplyDisplayedPagePaddingStyle(State.DisplayedStyle);
-}
-
-void ULunarTabs::ApplyDisplayedIndicatorStyle(
-	const FName TabId,
-	const FLunarTabsStylePatch& DisplayedStyle) const
-{
-	if (UImage* Indicator = HeaderIndicators.FindRef(TabId))
-	{
-		Indicator->SetBrush(DisplayedStyle.ActiveIndicatorBrush);
-		Indicator->SetColorAndOpacity(DisplayedStyle.ActiveIndicatorTint);
-	}
-}
-
-void ULunarTabs::ApplyDisplayedPagePaddingStyle(
-	const FLunarTabsStylePatch& DisplayedStyle) const
-{
 	if (HorizontalPageHost)
 	{
-		HorizontalPageHost->SetPadding(DisplayedStyle.PagePadding);
+		HorizontalPageHost->SetPadding(PagePresentationPadding);
 	}
 	if (VerticalPageHost)
 	{
-		VerticalPageHost->SetPadding(DisplayedStyle.PagePadding);
+		VerticalPageHost->SetPadding(PagePresentationPadding);
 	}
 }
-
 void ULunarTabs::RefreshAllHeaderPresentations()
 {
 	for (const TPair<FName, TObjectPtr<ULunarTabHeader>>& Pair : HeaderWidgets)
@@ -1477,6 +1046,7 @@ void ULunarTabs::RefreshAllHeaderPresentations()
 			Pair.Value->RefreshVisualState();
 		}
 	}
+	ApplyNativePresentation();
 }
 
 void ULunarTabs::ReportTabsError(const FString& Message) const

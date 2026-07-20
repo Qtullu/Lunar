@@ -11,6 +11,9 @@ public class LunarEditor : ModuleRules
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
+                "AssetTools",
+                "ContentBrowser",
+                "ContentBrowserData",
                 "Core",
                 "CoreUObject",
                 "Engine",
@@ -18,6 +21,7 @@ public class LunarEditor : ModuleRules
                 "PropertyEditor",
                 "Slate",
                 "SlateCore",
+                "ToolMenus",
                 "UMG",
                 "UMGEditor",
                 "UnrealEd"

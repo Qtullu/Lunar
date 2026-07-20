@@ -48,7 +48,7 @@ FLunarNavigationInputSettings::FLunarNavigationInputSettings()
 {
 	using namespace LunarNavigationSettings_Private;
 
-	ActionDefinitions.Reserve(8);
+	ActionDefinitions.Reserve(9);
 	ActionDefinitions.Add(MakeActionDefinition(
 		LunarGameplayTags::UI_Action_Navigate_Up.GetTag(),
 		LOCTEXT("NavigateUpAction", "Navigate Up"),
@@ -99,6 +99,10 @@ FLunarNavigationInputSettings::FLunarNavigationInputSettings()
 			EKeys::Gamepad_LeftStick_Down,
 			EKeys::Gamepad_LeftStick_Left
 		}));
+	ActionDefinitions.Add(MakeActionDefinition(
+		LunarGameplayTags::UI_Action_Selection_Toggle.GetTag(),
+		LOCTEXT("ToggleSelectionAction", "Toggle Selection"),
+		{ EKeys::Gamepad_FaceButton_Left }));
 }
 
 FLunarNavigationBehaviorSettings::FLunarNavigationBehaviorSettings()
