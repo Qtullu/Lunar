@@ -10,6 +10,9 @@
 
 #include "Components/PanelWidget.h"
 #include "Engine/LocalPlayer.h"
+#include "Framework/Application/IInputProcessor.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/SlateUser.h"
 #include "UI/Navigation/Core/LunarNavigationScope.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
 
@@ -68,6 +71,72 @@ namespace LunarContextMenu_Private
 	}
 }
 
+/** Observes global primary pointer-down so a compact ContextMenu can dismiss outside its own geometry. */
+class FLunarContextMenuOutsideClickInputProcessor final : public IInputProcessor
+{
+public:
+	/** @param InOwner Weak ContextMenu owner receiving pointer-down callbacks. */
+	explicit FLunarContextMenuOutsideClickInputProcessor(ULunarContextMenu* InOwner)
+		: Owner(InOwner)
+	{
+	}
+
+	/** IInputProcessor tick; no work is required. */
+	virtual void Tick(float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override
+	{
+	}
+
+	/** Routes mouse movement for optional delayed pointer-leave dismissal. */
+	virtual bool HandleMouseMoveEvent(
+		FSlateApplication& SlateApp,
+		const FPointerEvent& MouseEvent) override
+	{
+		if (Owner.IsValid() && !MouseEvent.IsTouchEvent())
+		{
+			Owner->HandleGlobalPointerMove(
+				MouseEvent.GetScreenSpacePosition(),
+				MouseEvent.GetUserIndex());
+		}
+		return false;
+	}
+
+	/** Routes primary mouse and touch pointer-down before normal widget routing. */
+	virtual bool HandleMouseButtonDownEvent(
+		FSlateApplication& SlateApp,
+		const FPointerEvent& MouseEvent) override
+	{
+		const bool bPrimaryPointer = MouseEvent.IsTouchEvent()
+			? MouseEvent.GetPointerIndex() == 0
+			: MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
+		if (Owner.IsValid() && bPrimaryPointer)
+		{
+			return Owner->HandleGlobalPointerDown(
+				MouseEvent.GetScreenSpacePosition(),
+				MouseEvent.GetUserIndex(),
+				MouseEvent.IsTouchEvent());
+		}
+		return false;
+	}
+
+	/** Treats double-click as the matching pointer-down dismissal event. */
+	virtual bool HandleMouseButtonDoubleClickEvent(
+		FSlateApplication& SlateApp,
+		const FPointerEvent& MouseEvent) override
+	{
+		return HandleMouseButtonDownEvent(SlateApp, MouseEvent);
+	}
+
+	/** @return Stable diagnostics label. */
+	virtual const TCHAR* GetDebugName() const override
+	{
+		return TEXT("LunarContextMenuOutsideClick");
+	}
+
+private:
+	/** Weak owner prevents Slate from extending the UWidget lifetime. */
+	TWeakObjectPtr<ULunarContextMenu> Owner;
+};
+
 ULunarContextMenu::ULunarContextMenu(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -121,7 +190,10 @@ bool ULunarContextMenu::OpenContextMenu()
 	NavigationScope->Settings = ScopeSettings;
 
 	const ESlateVisibility PreviousVisibility = GetVisibility();
-	SetVisibility(ESlateVisibility::Visible);
+	// The ContextMenu wrapper may cover much more space than its compact popup.
+	// Keep only its children hit-testable so transparent wrapper geometry cannot
+	// suppress hover on an open ancestor menu.
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	RefreshVisualState();
 
 	bOpeningContextMenu = true;
@@ -137,6 +209,8 @@ bool ULunarContextMenu::OpenContextMenu()
 	}
 
 	bContextMenuOpen = true;
+	ResetPointerLeaveState();
+	RegisterOutsideClickProcessor();
 	OnContextMenuOpened.Broadcast(this);
 
 	const bool bShouldClose = bCloseRequestedWhileOpening;
@@ -168,6 +242,7 @@ bool ULunarContextMenu::CloseContextMenu()
 		&& NavigationSubsystem->GetNavigationScopeStack().Contains(NavigationScope);
 	if (!bContextMenuOpen && !bScopeInStack)
 	{
+		UnregisterOutsideClickProcessor();
 		return true;
 	}
 
@@ -227,9 +302,16 @@ bool ULunarContextMenu::SetContextMenuPopupWidget(UWidget* NewPopupWidget)
 
 bool ULunarContextMenu::HandleContextMenuOutsidePointer()
 {
-	return bContextMenuOpen
-		&& IsOurScopeTop(ResolveContextMenuNavigationSubsystem())
-		&& CloseContextMenu();
+	if (!bContextMenuOpen
+		|| !IsOurScopeTop(ResolveContextMenuNavigationSubsystem()))
+	{
+		return false;
+	}
+
+	ULunarContextMenu* ChainRoot = ResolveContextMenuChainRoot();
+	return ChainRoot && ChainRoot->bCloseEntireMenuChainOnOutsidePointer
+		? CloseEntireContextMenuChain()
+		: CloseContextMenu();
 }
 
 void ULunarContextMenu::NativeConstruct()
@@ -256,6 +338,7 @@ void ULunarContextMenu::NativeDestruct()
 			TEXT("Unable to pop ContextMenu scope while destructing '%s'."),
 			*GetPathName());
 	}
+	UnregisterOutsideClickProcessor();
 	UnbindNavigationSubsystem();
 	Super::NativeDestruct();
 }
@@ -278,12 +361,22 @@ void ULunarContextMenu::NativeTick(const FGeometry& MyGeometry, const float InDe
 		|| !NavigationSubsystem->GetNavigationScopeStack().Contains(NavigationScope))
 	{
 		FinalizeContextMenuClosed(NavigationSubsystem);
+		return;
 	}
+
+	TickPointerLeaveDismissal(InDeltaTime);
 }
 
 void ULunarContextMenu::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
+	PointerLeaveCloseDelay = FMath::IsFinite(PointerLeaveCloseDelay)
+		? FMath::Max(0.0f, PointerLeaveCloseDelay)
+		: 0.15f;
+	if (!bCloseOnPointerLeave)
+	{
+		ResetPointerLeaveState();
+	}
 	ApplyRuntimePolicies();
 }
 
@@ -327,6 +420,11 @@ void ULunarContextMenu::HandleActiveScopeChanged(
 	if (!NavigationSubsystem->GetNavigationScopeStack().Contains(NavigationScope))
 	{
 		FinalizeContextMenuClosed(NavigationSubsystem);
+		return;
+	}
+	if (!IsInActiveContextMenuChain(NavigationSubsystem))
+	{
+		ResetPointerLeaveState();
 	}
 }
 
@@ -377,6 +475,195 @@ bool ULunarContextMenu::IsOurScopeTop(const ULunarNavigationSubsystem* Navigatio
 		&& NavigationSubsystem->GetActiveNavigationScope() == NavigationScope;
 }
 
+bool ULunarContextMenu::IsInActiveContextMenuChain(
+	const ULunarNavigationSubsystem* NavigationSubsystem) const
+{
+	if (!NavigationSubsystem || !NavigationScope)
+	{
+		return false;
+	}
+
+	ULunarNavigationScope* Scope = NavigationSubsystem->GetActiveNavigationScope();
+	while (Scope)
+	{
+		if (Scope == NavigationScope)
+		{
+			return true;
+		}
+
+		const ULunarContextMenu* ChildMenu = Cast<ULunarContextMenu>(Scope->GetOuter());
+		if (!ChildMenu || !ChildMenu->bContextMenuOpen)
+		{
+			return false;
+		}
+		Scope = Scope->GetParentScope();
+	}
+	return false;
+}
+
+ULunarContextMenu* ULunarContextMenu::ResolveContextMenuChainRoot() const
+{
+	ULunarContextMenu* ChainRoot = const_cast<ULunarContextMenu*>(this);
+	ULunarNavigationScope* ParentScope = NavigationScope
+		? NavigationScope->GetParentScope()
+		: nullptr;
+	while (ParentScope)
+	{
+		ULunarContextMenu* ParentMenu = Cast<ULunarContextMenu>(ParentScope->GetOuter());
+		if (!ParentMenu || !ParentMenu->bContextMenuOpen)
+		{
+			break;
+		}
+		ChainRoot = ParentMenu;
+		ParentScope = ParentScope->GetParentScope();
+	}
+	return ChainRoot;
+}
+
+ULunarContextMenu* ULunarContextMenu::ResolveAncestorMenuContainingPointer(
+	const FVector2D& ScreenSpacePosition) const
+{
+	ULunarNavigationScope* Scope = NavigationScope
+		? NavigationScope->GetParentScope()
+		: nullptr;
+	while (Scope)
+	{
+		ULunarContextMenu* AncestorMenu = Cast<ULunarContextMenu>(Scope->GetOuter());
+		if (!AncestorMenu || !AncestorMenu->bContextMenuOpen)
+		{
+			break;
+		}
+		if (AncestorMenu->IsPointerInsidePopup(ScreenSpacePosition))
+		{
+			return AncestorMenu;
+		}
+		Scope = Scope->GetParentScope();
+	}
+	return nullptr;
+}
+
+bool ULunarContextMenu::IsPointerOverSelectableItemInMenu(
+	const ULunarContextMenu* Menu,
+	const FVector2D& ScreenSpacePosition) const
+{
+	if (!Menu || !Menu->NavigationScope)
+	{
+		return false;
+	}
+
+	for (const ULunarNavigableWidget* Widget : Menu->NavigationScope->GetRegisteredWidgets())
+	{
+		if (!IsValid(Widget)
+			|| !Widget->CanReceiveLunarSelection()
+			|| !Widget->IsMouseInputAllowed())
+		{
+			continue;
+		}
+
+		const FGeometry& WidgetGeometry = Widget->GetCachedGeometry();
+		if (!WidgetGeometry.GetLocalSize().IsNearlyZero()
+			&& WidgetGeometry.IsUnderLocation(ScreenSpacePosition))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void ULunarContextMenu::UpdateAncestorPointerHover(
+	const FVector2D& ScreenSpacePosition)
+{
+	bool bTargetResolved = false;
+	ULunarNavigationScope* Scope = NavigationScope
+		? NavigationScope->GetParentScope()
+		: nullptr;
+	while (Scope)
+	{
+		ULunarContextMenu* AncestorMenu = Cast<ULunarContextMenu>(Scope->GetOuter());
+		if (!AncestorMenu || !AncestorMenu->bContextMenuOpen)
+		{
+			break;
+		}
+
+		for (ULunarNavigableWidget* Widget : Scope->GetRegisteredWidgets())
+		{
+			bool bShouldHover = false;
+			if (!bTargetResolved
+				&& IsValid(Widget)
+				&& Widget->CanReceiveLunarSelection()
+				&& Widget->IsMouseInputAllowed())
+			{
+				const FGeometry& WidgetGeometry = Widget->GetCachedGeometry();
+				bShouldHover = !WidgetGeometry.GetLocalSize().IsNearlyZero()
+					&& WidgetGeometry.IsUnderLocation(ScreenSpacePosition);
+				bTargetResolved = bShouldHover;
+			}
+			if (IsValid(Widget))
+			{
+				Widget->SetContextMenuPointerHovered(bShouldHover);
+			}
+		}
+		Scope = Scope->GetParentScope();
+	}
+}
+
+void ULunarContextMenu::ClearAncestorPointerHover()
+{
+	ULunarNavigationScope* Scope = NavigationScope
+		? NavigationScope->GetParentScope()
+		: nullptr;
+	while (Scope)
+	{
+		ULunarContextMenu* AncestorMenu = Cast<ULunarContextMenu>(Scope->GetOuter());
+		if (!AncestorMenu)
+		{
+			break;
+		}
+		for (ULunarNavigableWidget* Widget : Scope->GetRegisteredWidgets())
+		{
+			if (IsValid(Widget))
+			{
+				Widget->SetContextMenuPointerHovered(false);
+			}
+		}
+		Scope = Scope->GetParentScope();
+	}
+}
+
+bool ULunarContextMenu::CloseDescendantMenusToAncestor(
+	ULunarContextMenu* AncestorMenu)
+{
+	if (!AncestorMenu || !NavigationScope || !AncestorMenu->NavigationScope)
+	{
+		return false;
+	}
+
+	ULunarNavigationScope* DirectChildScope = NavigationScope;
+	while (ULunarNavigationScope* ParentScope = DirectChildScope->GetParentScope())
+	{
+		if (ParentScope == AncestorMenu->NavigationScope)
+		{
+			if (ULunarContextMenu* DirectChildMenu =
+				Cast<ULunarContextMenu>(DirectChildScope->GetOuter()))
+			{
+				return DirectChildMenu->CloseContextMenu();
+			}
+			return false;
+		}
+		DirectChildScope = ParentScope;
+	}
+	return false;
+}
+
+bool ULunarContextMenu::CloseEntireContextMenuChain()
+{
+	if (ULunarContextMenu* ChainRoot = ResolveContextMenuChainRoot())
+	{
+		return ChainRoot->CloseContextMenu();
+	}
+	return false;
+}
+
 bool ULunarContextMenu::IsPointerInsidePopup(const FVector2D& ScreenSpacePosition) const
 {
 	const UWidget* PopupWidget = ResolvePopupWidget();
@@ -392,6 +679,48 @@ bool ULunarContextMenu::IsPointerInsidePopup(const FVector2D& ScreenSpacePositio
 		return true;
 	}
 	return PopupGeometry.IsUnderLocation(ScreenSpacePosition);
+}
+
+bool ULunarContextMenu::IsPointerInsideActiveContextMenuChain(
+	const FVector2D& ScreenSpacePosition,
+	const ULunarNavigationSubsystem* NavigationSubsystem) const
+{
+	if (!IsInActiveContextMenuChain(NavigationSubsystem))
+	{
+		return false;
+	}
+
+	ULunarNavigationScope* Scope = NavigationSubsystem->GetActiveNavigationScope();
+	while (Scope)
+	{
+		const ULunarContextMenu* Menu = Cast<ULunarContextMenu>(Scope->GetOuter());
+		if (!Menu || !Menu->bContextMenuOpen)
+		{
+			return false;
+		}
+		if (Menu->IsPointerInsidePopup(ScreenSpacePosition))
+		{
+			return true;
+		}
+		if (Scope == NavigationScope)
+		{
+			break;
+		}
+		Scope = Scope->GetParentScope();
+	}
+	return false;
+}
+
+bool ULunarContextMenu::IsPointerOwnedByLocalPlayer(const uint32 SlateUserIndex) const
+{
+	if (ULocalPlayer* LocalPlayer = GetOwningLocalPlayer())
+	{
+		if (const TSharedPtr<FSlateUser> SlateUser = LocalPlayer->GetSlateUser())
+		{
+			return SlateUser->GetUserIndex() == SlateUserIndex;
+		}
+	}
+	return true;
 }
 
 bool ULunarContextMenu::IsWidgetInsideClosingMenu(const UWidget* Candidate) const
@@ -428,6 +757,157 @@ void ULunarContextMenu::UnbindNavigationSubsystem()
 	BoundNavigationSubsystem.Reset();
 }
 
+void ULunarContextMenu::RegisterOutsideClickProcessor()
+{
+	if (OutsideClickProcessor.IsValid()
+		|| !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	OutsideClickProcessor =
+		MakeShared<FLunarContextMenuOutsideClickInputProcessor>(this);
+	if (!FSlateApplication::Get().RegisterInputPreProcessor(
+		OutsideClickProcessor))
+	{
+		OutsideClickProcessor.Reset();
+	}
+}
+
+void ULunarContextMenu::UnregisterOutsideClickProcessor()
+{
+	ResetPointerLeaveState();
+	ClearAncestorPointerHover();
+	if (!OutsideClickProcessor.IsValid())
+	{
+		return;
+	}
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().UnregisterInputPreProcessor(
+			OutsideClickProcessor);
+	}
+	OutsideClickProcessor.Reset();
+}
+
+bool ULunarContextMenu::HandleGlobalPointerDown(
+	const FVector2D& ScreenPosition,
+	const uint32 SlateUserIndex,
+	const bool bTouchEvent)
+{
+	if (!bContextMenuOpen || bClosingContextMenu)
+	{
+		return false;
+	}
+
+	ULunarNavigationSubsystem* NavigationSubsystem =
+		ResolveContextMenuNavigationSubsystem();
+	if (!IsOurScopeTop(NavigationSubsystem)
+		|| !IsPointerOwnedByLocalPlayer(SlateUserIndex))
+	{
+		return false;
+	}
+
+	if (IsPointerInsidePopup(ScreenPosition))
+	{
+		if (!bTouchEvent && bCloseOnPointerLeave)
+		{
+			bPointerWasInsidePopup = true;
+			bPointerLeaveClosePending = false;
+			PointerLeaveCloseElapsed = 0.0f;
+		}
+		return false;
+	}
+	if (ULunarContextMenu* AncestorMenu =
+		ResolveAncestorMenuContainingPointer(ScreenPosition))
+	{
+		if (IsPointerOverSelectableItemInMenu(AncestorMenu, ScreenPosition))
+		{
+			CloseDescendantMenusToAncestor(AncestorMenu);
+		}
+		return false;
+	}
+	return HandleContextMenuOutsidePointer();
+}
+
+void ULunarContextMenu::HandleGlobalPointerMove(
+	const FVector2D& ScreenPosition,
+	const uint32 SlateUserIndex)
+{
+	ULunarNavigationSubsystem* NavigationSubsystem =
+		ResolveContextMenuNavigationSubsystem();
+	if (!bContextMenuOpen
+		|| bClosingContextMenu
+		|| !IsPointerOwnedByLocalPlayer(SlateUserIndex))
+	{
+		ResetPointerLeaveState();
+		return;
+	}
+	if (IsOurScopeTop(NavigationSubsystem))
+	{
+		UpdateAncestorPointerHover(ScreenPosition);
+	}
+
+	if (!bCloseOnPointerLeave
+		|| !IsInActiveContextMenuChain(NavigationSubsystem))
+	{
+		ResetPointerLeaveState();
+		return;
+	}
+
+	if (IsPointerInsideActiveContextMenuChain(ScreenPosition, NavigationSubsystem))
+	{
+		bPointerWasInsidePopup = true;
+		bPointerLeaveClosePending = false;
+		PointerLeaveCloseElapsed = 0.0f;
+	}
+	else if (bPointerWasInsidePopup && !bPointerLeaveClosePending)
+	{
+		bPointerLeaveClosePending = true;
+		PointerLeaveCloseElapsed = 0.0f;
+	}
+}
+
+void ULunarContextMenu::TickPointerLeaveDismissal(const float DeltaTime)
+{
+	if (!bPointerLeaveClosePending)
+	{
+		return;
+	}
+
+	ULunarNavigationSubsystem* NavigationSubsystem =
+		ResolveContextMenuNavigationSubsystem();
+	if (!bCloseOnPointerLeave || !IsInActiveContextMenuChain(NavigationSubsystem))
+	{
+		ResetPointerLeaveState();
+		return;
+	}
+
+	PointerLeaveCloseElapsed += FMath::Max(0.0f, DeltaTime);
+	if (PointerLeaveCloseElapsed < PointerLeaveCloseDelay)
+	{
+		return;
+	}
+
+	const bool bIsRootMenu = ResolveContextMenuChainRoot() == this;
+	ResetPointerLeaveState();
+	if (bIsRootMenu)
+	{
+		CloseEntireContextMenuChain();
+	}
+	else
+	{
+		CloseContextMenu();
+	}
+}
+
+void ULunarContextMenu::ResetPointerLeaveState()
+{
+	bPointerWasInsidePopup = false;
+	bPointerLeaveClosePending = false;
+	PointerLeaveCloseElapsed = 0.0f;
+}
+
 void ULunarContextMenu::FinalizeContextMenuClosed(ULunarNavigationSubsystem* NavigationSubsystem)
 {
 	if (!bContextMenuOpen || bClosingContextMenu)
@@ -436,6 +916,7 @@ void ULunarContextMenu::FinalizeContextMenuClosed(ULunarNavigationSubsystem* Nav
 	}
 
 	TGuardValue<bool> ClosingGuard(bClosingContextMenu, true);
+	UnregisterOutsideClickProcessor();
 	bContextMenuOpen = false;
 	bCloseRequestedWhileOpening = false;
 	SetVisibility(ESlateVisibility::Collapsed);

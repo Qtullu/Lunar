@@ -398,6 +398,10 @@ private:
 	bool IsLunarHierarchyAvailable(bool bAllowSelfDisabled) const;
 	/** @return True when pointer presentation is allowed for an enabled control or an inspectable disabled control. */
 	bool CanReceiveLunarPointerPresentation() const;
+	/** Applies pointer hover routed through an open descendant ContextMenu. @param bHovered Whether routed pointer geometry currently contains this widget. */
+	void SetContextMenuPointerHovered(bool bHovered);
+	/** @return True when native Slate hover or ContextMenu-routed hover is active. */
+	bool IsPointerHoveredForPresentation() const;
 	/** @return True when pointer input selected this widget, releasing ScrollBox confinement when crossing its boundary. */
 	bool RequestLunarPointerSelection();
 	/** @param bInputAllowed Whether the direct-input channel is enabled. @return True when this logically disabled control may receive selection and rejected activation from that channel. */
@@ -420,6 +424,8 @@ private:
 	UPROPERTY(Transient) bool bLunarSelected = false;
 	/** Whether the pointer currently hovers this control. */
 	UPROPERTY(Transient) bool bPointerHovered = false;
+	/** Whether an open descendant ContextMenu routes pointer hover to this inactive ancestor item. */
+	UPROPERTY(Transient) bool bContextMenuPointerHovered = false;
 	/** Whether this control owns an active pointer press. */
 	UPROPERTY(Transient) bool bPointerPressed = false;
 	/** Whether the current pointer press remains within activation tolerance. */
@@ -478,5 +484,6 @@ private:
 	bool bLastObservedPointerPresentation = false;
 
 	friend class ULunarNavigationSubsystem; ///< Owns authoritative selection and focus delegation.
+	friend class ULunarContextMenu; ///< Routes presentation-only hover across a cascading menu chain.
 	friend class ULunarInputPromptWidget; ///< Receives protected prompt invalidation access.
 };

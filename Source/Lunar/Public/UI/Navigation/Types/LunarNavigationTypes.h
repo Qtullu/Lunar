@@ -30,6 +30,8 @@ class ULunarRadio;
 class ULunarScrollBox;
 class ULunarSlider;
 class ULunarSwitch;
+class ULunarTabHeader;
+class ULunarTabPage;
 class ULunarTabs;
 
 /** @brief Cardinal direction used by Lunar navigation. @ingroup LunarNavigationTypes */
@@ -157,6 +159,17 @@ enum class ELunarTabPageLifetime : uint8
 	LazyCached,           ///< Create a page on first activation and retain it afterward.
 	Eager,                ///< Create every page when the Tabs control initializes.
 	RecreateOnActivation  ///< Recreate a page every time its tab becomes active.
+};
+
+/** @brief Position of the active page relative to the generated Tab Header strip. @ingroup LunarNavigationTypes */
+UENUM(BlueprintType)
+enum class ELunarTabPagePlacement : uint8
+{
+	Automatic, ///< Preserve the conventional layout: Bottom for horizontal headers and Right for vertical headers.
+	Top,       ///< Place the page above the header strip.
+	Bottom,    ///< Place the page below the header strip.
+	Left,      ///< Place the page to the left of the header strip.
+	Right      ///< Place the page to the right of the header strip.
 };
 
 /** @brief Amount of navigation validation performed by the runtime. @ingroup LunarNavigationTypes */
@@ -453,17 +466,17 @@ struct LUNAR_API FLunarTabDescriptor
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
 	FName TabId = NAME_None;
 
-	/** Runtime validates that the class implements the Lunar Tab Header contract. */
+	/** Lunar Tab Header class used to construct this tab's selectable header. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	TSubclassOf<UUserWidget> HeaderWidgetClass;
+	TSubclassOf<ULunarTabHeader> HeaderWidgetClass;
 
-	/** Widget class used when the control needs to construct this tab page. */
+	/** Lunar Tab Page class used when the control needs to construct this tab page. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	TSubclassOf<UUserWidget> PageWidgetClass;
+	TSubclassOf<ULunarTabPage> PageWidgetClass;
 
-	/** Optional pre-created page instance used instead of PageWidgetClass. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")
-	TObjectPtr<UUserWidget> PageWidgetInstance = nullptr;
+	/** Optional runtime-created Lunar Tab Page instance used instead of PageWidgetClass. Supplied through SetTabs rather than asset defaults. */
+	UPROPERTY(BlueprintReadWrite, Transient, Category = "Lunar|UI|Navigation", meta = (DisplayName = "Runtime Page Widget Instance"))
+	TObjectPtr<ULunarTabPage> PageWidgetInstance = nullptr;
 
 	/** Allows this tab to be activated. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lunar|UI|Navigation")

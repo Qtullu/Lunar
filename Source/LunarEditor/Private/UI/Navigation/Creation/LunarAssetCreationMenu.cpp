@@ -41,6 +41,7 @@
 #include "UI/Navigation/Controls/LunarSlider.h"
 #include "UI/Navigation/Controls/LunarSwitch.h"
 #include "UI/Navigation/Controls/LunarTabHeader.h"
+#include "UI/Navigation/Controls/LunarTabPage.h"
 #include "UI/Navigation/Controls/LunarTabs.h"
 #include "UI/Navigation/Core/LunarNavigableWidget.h"
 #include "UI/Navigation/Core/LunarScreenWidget.h"
@@ -357,6 +358,10 @@ void FLunarAssetCreationMenu::PopulateWidgetMenu(UToolMenu* Menu, FString Packag
 		LOCTEXT("TabHeaderLabel", "Tab Header"),
 		LOCTEXT("TabHeaderToolTip", "Create a Lunar Tab Header Widget Blueprint."),
 		PackagePath, ULunarTabHeader::StaticClass(), TEXT("W_LunarTabHeader"));
+	AddWidgetBlueprintEntry(Menu, TabsSection, TEXT("LunarTabPage"),
+		LOCTEXT("TabPageLabel", "Tab Page"),
+		LOCTEXT("TabPageToolTip", "Create an owner-authored Lunar Tab Page Widget Blueprint."),
+		PackagePath, ULunarTabPage::StaticClass(), TEXT("W_LunarTabPage"));
 	AddWidgetBlueprintEntry(Menu, TabsSection, TEXT("LunarTabs"),
 		LOCTEXT("TabsLabel", "Tabs"),
 		LOCTEXT("TabsToolTip", "Create a Lunar Tabs Widget Blueprint."),

@@ -19,8 +19,10 @@ class UOverlay;
 class UUserWidget;
 class UVerticalBox;
 class UWidget;
+class UWidgetSwitcher;
 class ULunarNavigationSubsystem;
 class ULunarTabHeader;
+class ULunarTabPage;
 
 /**
  * Composite tab strip with stable IDs, independently selectable headers, and owned page lifetimes.
@@ -47,13 +49,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs", meta = (AdvancedDisplay = "NotificationPolicy"))
 	bool ActivateTabById(FName TabId, ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
 
+	/** Clears the active page when bAllowNoActiveTab is enabled. @param NotificationPolicy Whether to publish the active-ID change; defaults to Notify. @return True when no tab is active. */
+	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs", meta = (AdvancedDisplay = "NotificationPolicy"))
+	bool ClearActiveTab(ELunarChangeNotificationPolicy NotificationPolicy = ELunarChangeNotificationPolicy::Notify);
+
 	/** Returns the stable ID of the active page. @return Active tab ID, or NAME_None. */
 	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	FName GetActiveTabId() const { return ActiveTabId; }
 
 	/** Returns a created page instance by stable tab ID. @param TabId Stable tab ID. @return Page widget, or null when not created. */
 	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
-	UUserWidget* GetPageWidgetById(FName TabId) const;
+	ULunarTabPage* GetPageWidgetById(FName TabId) const;
 
 	/** Sets the native active-indicator brush. @param NewBrush New indicator brush. */
 	UFUNCTION(BlueprintCallable, Category = "Lunar|UI|Tabs|Presentation")
@@ -114,13 +120,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	ELunarTabPageLifetime PageLifetime = ELunarTabPageLifetime::LazyCached;
 
-	/** Horizontal places the strip above the page; Vertical places it to the left. */
+	/** Allows Tabs to intentionally have no active page. Disabled by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
+	bool bAllowNoActiveTab = false;
+
+	/** Direction in which generated Tab Headers are arranged. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
 	TEnumAsByte<EOrientation> Orientation = Orient_Horizontal;
+
+	/** Position of the active page relative to the header strip. Automatic preserves Bottom/Right legacy behavior. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
+	ELunarTabPagePlacement PagePlacement = ELunarTabPagePlacement::Automatic;
 
 	/** Broadcast after the active tab ID changes. */
 	UPROPERTY(BlueprintAssignable, Category = "Lunar|UI|Tabs")
 	FLunarTabsActiveTabChangedSignature OnActiveTabChanged;
+
+#if WITH_EDITORONLY_DATA
+	/** Stable tab ID displayed as active in the UMG Designer; None uses ActiveTabId and normal fallback. */
+	UPROPERTY(EditAnywhere, Category = "Lunar|UI|Tabs|Designer Preview", meta = (GetOptions = "GetDesignerPreviewTabIdOptions"))
+	FName DesignerPreviewTabId = NAME_None;
+
+	/** Previews Tabs with no active page. Available only when bAllowNoActiveTab is enabled. */
+	UPROPERTY(EditAnywhere, Category = "Lunar|UI|Tabs|Designer Preview", meta = (EditCondition = "bAllowNoActiveTab", EditConditionHides))
+	bool bDesignerPreviewNoActiveTab = false;
+#endif
 
 protected:
 	/** Builds the owner-preserving native layout used by the tab strip and page host. @return Root Slate widget. */
@@ -131,13 +155,19 @@ protected:
 	virtual void NativeConstruct() override;
 	/** Applies deferred navigation and page-selection capture. @param MyGeometry Cached widget geometry. @param InDeltaTime Elapsed seconds. */
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+#if WITH_EDITOR
+	/** Rebuilds the live UMG Designer preview immediately after authored properties change. */
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 private:
 	/** Validates stable IDs, classes, and descriptor consistency. @param Descriptors Descriptors to inspect. @param OutError Actionable failure text. @return True when valid. */
 	bool ValidateTabDescriptors(const TArray<FLunarTabDescriptor>& Descriptors, FString& OutError) const;
 	/** Creates the generated UMG layout once while preserving authored owner content. */
 	void EnsureNativeLayout();
-	/** Places the header strip and page host according to Orientation. */
+	/** Places the header strip and page host according to Orientation and PagePlacement. */
 	void ApplyOrientation();
+	/** Resolves Automatic into the conventional placement for the current header orientation. @return Effective page placement. */
+	ELunarTabPagePlacement ResolvePagePlacement() const;
 	/** Removes generated headers and pages and clears their runtime caches. */
 	void ResetGeneratedTabs();
 	/** Creates one header per valid descriptor. @return True when all headers were built. */
@@ -145,11 +175,13 @@ private:
 	/** Creates and initializes a generated header. @param Descriptor Source descriptor. @return Header widget, or null on failure. */
 	ULunarTabHeader* CreateHeaderWidget(const FLunarTabDescriptor& Descriptor);
 	/** Creates a page instance for a descriptor. @param Descriptor Source descriptor. @return New page widget, or null on failure. */
-	UUserWidget* CreatePageWidget(const FLunarTabDescriptor& Descriptor);
+	ULunarTabPage* CreatePageWidget(const FLunarTabDescriptor& Descriptor);
 	/** Removes a page managed by RecreateOnActivation. @param TabId Stable tab ID. */
 	void DestroyRecreatedPage(FName TabId);
 	/** Activates a tab with caller-controlled notifications. @param TabId Stable tab ID. @param bNotifyRequestedHeader Whether the requested header receives activation feedback. @param bBroadcastChange Whether to broadcast active-ID changes. @return True on success. */
 	bool ActivateTabByIdInternal(FName TabId, bool bNotifyRequestedHeader, bool bBroadcastChange);
+	/** Clears the current page with caller-controlled notifications. @param bBroadcastChange Whether to publish OnActiveTabChanged. @return True when no tab is active. */
+	bool ClearActiveTabInternal(bool bBroadcastChange);
 	/** Activates the tab represented by an owned header. @param Header Candidate owned header. @return True on success. */
 	bool TryActivateTabFromHeader(ULunarTabHeader* Header);
 	/** Tests whether a descriptor is enabled. @param TabId Stable tab ID. @return True when enabled. */
@@ -190,6 +222,17 @@ private:
 	void ApplyNativePresentation();
 	/** Refreshes every generated header visual state and native indicator. */
 	void RefreshAllHeaderPresentations();
+	/** Returns descriptor IDs for the Designer preview dropdown. @return Stable authored tab IDs. */
+	UFUNCTION()
+	TArray<FString> GetDesignerPreviewTabIdOptions() const;
+#if WITH_EDITOR
+	/** Rebuilds generated headers and every page for UMG Designer preview. */
+	void RebuildDesignerPreview();
+	/** Applies the selected Designer preview ID without recreating generated headers or pages. */
+	void ApplyDesignerPreviewSelection();
+	/** Resolves the effective Designer preview ID against authored state and enabled descriptors. @return Preview tab ID, or NAME_None. */
+	FName ResolveDesignerPreviewTabId() const;
+#endif
 	/** Reports an actionable Tabs configuration or runtime error. @param Message Error text. */
 	void ReportTabsError(const FString& Message) const;
 
@@ -198,20 +241,20 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UOverlay> GeneratedRoot = nullptr;
 	/** Authored content preserved while the native layout owns the root. */
 	UPROPERTY(Transient) TObjectPtr<UWidget> PreservedOwnerContent = nullptr;
-	/** Layout used when the header strip sits above the page. */
+	/** Vertical arrangement used for Top and Bottom page placement. */
 	UPROPERTY(Transient) TObjectPtr<UVerticalBox> HorizontalLayout = nullptr;
 	/** Header strip used by horizontal orientation. */
 	UPROPERTY(Transient) TObjectPtr<UHorizontalBox> HorizontalHeaderStrip = nullptr;
-	/** Page host used by horizontal orientation. */
+	/** Page host used by Top and Bottom placement. */
 	UPROPERTY(Transient) TObjectPtr<UBorder> HorizontalPageHost = nullptr;
-	/** Layout used when the header strip sits to the left of the page. */
+	/** Horizontal arrangement used for Left and Right page placement. */
 	UPROPERTY(Transient) TObjectPtr<UHorizontalBox> VerticalLayout = nullptr;
 	/** Header strip used by vertical orientation. */
 	UPROPERTY(Transient) TObjectPtr<UVerticalBox> VerticalHeaderStrip = nullptr;
-	/** Page host used by vertical orientation. */
+	/** Page host used by Left and Right placement. */
 	UPROPERTY(Transient) TObjectPtr<UBorder> VerticalPageHost = nullptr;
-	/** Overlay containing generated page widgets. */
-	UPROPERTY(Transient) TObjectPtr<UOverlay> PageContainer = nullptr;
+	/** Switcher containing generated page widgets with exactly one active Slate child. */
+	UPROPERTY(Transient) TObjectPtr<UWidgetSwitcher> PageContainer = nullptr;
 
 	/** Generated headers indexed by stable tab ID. */
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<ULunarTabHeader>> HeaderWidgets;
@@ -228,7 +271,7 @@ private:
 	/** Cached native page-host padding. */
 	UPROPERTY(Transient) FMargin PagePresentationPadding;
 	/** Created page widgets indexed by stable tab ID. */
-	UPROPERTY(Transient) TMap<FName, TObjectPtr<UUserWidget>> PageWidgets;
+	UPROPERTY(Transient) TMap<FName, TObjectPtr<ULunarTabPage>> PageWidgets;
 	/** Last selected descendant ID retained independently for each page. */
 	UPROPERTY(Transient) TMap<FName, FName> LastPageDescendantNavigationIds;
 	/** Header that initiated the deferred composite navigation request. */
@@ -238,12 +281,20 @@ private:
 
 	/** Orientation currently represented by the generated hierarchy. */
 	TEnumAsByte<EOrientation> AppliedOrientation = Orient_Horizontal;
+	/** Page placement currently represented by the generated hierarchy. */
+	ELunarTabPagePlacement AppliedPagePlacement = ELunarTabPagePlacement::Automatic;
 	/** Whether the native generated layout has been created. */
 	bool bNativeLayoutInitialized = false;
 	/** Whether descriptors have been validated and generated controls initialized. */
 	bool bTabsInitialized = false;
 	/** Reentrancy guard for active-tab changes. */
 	bool bActivationInProgress = false;
+#if WITH_EDITOR
+	/** Prevents recursive Designer preview rebuilds during property synchronization. */
+	bool bDesignerPreviewRebuildInProgress = false;
+	/** Selects the lightweight visibility-only path while a preview-selection property changes. */
+	bool bDesignerPreviewSelectionChangeInProgress = false;
+#endif
 
 	/** Grants generated headers access to owner-controlled routing and activation. */
 	friend class ULunarTabHeader;

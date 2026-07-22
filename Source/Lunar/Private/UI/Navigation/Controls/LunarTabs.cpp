@@ -18,9 +18,11 @@
 #include "Components/PanelWidget.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/WidgetSwitcher.h"
 #include "Engine/LocalPlayer.h"
 #include "Subsystems/Console/LunarConsoleSubsystem.h"
 #include "UI/Navigation/Controls/LunarTabHeader.h"
+#include "UI/Navigation/Controls/LunarTabPage.h"
 #include "UI/Navigation/Core/LunarNavigationSubsystem.h"
 #include "Widgets/SWidget.h"
 
@@ -30,14 +32,15 @@ DEFINE_LOG_CATEGORY_STATIC(LogLunarTabs, Log, All);
 /** Private construction and UMG hierarchy helpers for ULunarTabs. */
 namespace LunarTabs_Private
 {
-	/** Creates an owner-associated UserWidget page or header. @param Tabs Owning Tabs widget. @param WidgetClass Class to instantiate. @return New widget, or null. */
-	UUserWidget* CreateUserWidgetForTabs(const ULunarTabs* Tabs, const TSubclassOf<UUserWidget> WidgetClass)
+	/** Creates an owner-associated typed UserWidget page or header. @param Tabs Owning Tabs widget. @param WidgetClass Class to instantiate. @return New widget, or null. */
+	template <typename WidgetType>
+	WidgetType* CreateUserWidgetForTabs(const ULunarTabs* Tabs, const TSubclassOf<WidgetType> WidgetClass)
 	{
 		if (!Tabs || !WidgetClass)
 		{
 			return nullptr;
 		}
-		return CreateWidget<UUserWidget>(const_cast<ULunarTabs*>(Tabs), WidgetClass);
+		return CreateWidget<WidgetType>(const_cast<ULunarTabs*>(Tabs), WidgetClass);
 	}
 
 	/** Resolves panel or nested UserWidget ownership for descendant checks. @param Widget Source widget. @return Logical parent, or null. */
@@ -221,9 +224,19 @@ bool ULunarTabs::ActivateTabById(
 	return ActivateTabByIdInternal(TabId, bNotify, bNotify);
 }
 
-UUserWidget* ULunarTabs::GetPageWidgetById(const FName TabId) const
+bool ULunarTabs::ClearActiveTab(const ELunarChangeNotificationPolicy NotificationPolicy)
 {
-	if (const TObjectPtr<UUserWidget>* Page = PageWidgets.Find(TabId))
+	if (!bTabsInitialized)
+	{
+		const TArray<FLunarTabDescriptor> InitialDescriptors = TabDescriptors;
+		SetTabs(InitialDescriptors, ELunarChangeNotificationPolicy::Silent);
+	}
+	return ClearActiveTabInternal(NotificationPolicy == ELunarChangeNotificationPolicy::Notify);
+}
+
+ULunarTabPage* ULunarTabs::GetPageWidgetById(const FName TabId) const
+{
+	if (const TObjectPtr<ULunarTabPage>* Page = PageWidgets.Find(TabId))
 	{
 		return Page->Get();
 	}
@@ -240,6 +253,22 @@ void ULunarTabs::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 	EnsureNativeLayout();
+#if WITH_EDITOR
+	if (IsDesignTime())
+	{
+		const bool bHasCompletePreview = HeaderWidgets.Num() == TabDescriptors.Num()
+			&& PageWidgets.Num() == TabDescriptors.Num();
+		if (bDesignerPreviewSelectionChangeInProgress && bHasCompletePreview)
+		{
+			ApplyDesignerPreviewSelection();
+		}
+		else
+		{
+			RebuildDesignerPreview();
+		}
+		return;
+	}
+#endif
 	ApplyOrientation();
 	ApplyNativePresentation();
 }
@@ -267,7 +296,7 @@ void ULunarTabs::NativeConstruct()
 void ULunarTabs::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	if (AppliedOrientation != Orientation)
+	if (AppliedOrientation != Orientation || AppliedPagePlacement != PagePlacement)
 	{
 		ApplyOrientation();
 	}
@@ -326,10 +355,11 @@ bool ULunarTabs::ValidateTabDescriptors(
 		if (bHasPageClass)
 		{
 			UClass* PageClass = Descriptor.PageWidgetClass.Get();
-			if (!PageClass || PageClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists))
+			if (!PageClass || !PageClass->IsChildOf(ULunarTabPage::StaticClass())
+				|| PageClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists))
 			{
 				OutError = FString::Printf(
-					TEXT("Tab '%s' uses a non-instantiable page class."),
+					TEXT("Tab '%s' uses a non-instantiable Lunar Tab Page class."),
 					*Descriptor.TabId.ToString());
 				return false;
 			}
@@ -383,7 +413,7 @@ void ULunarTabs::EnsureNativeLayout()
 	VerticalLayout = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("LunarTabs_VerticalLayout"));
 	VerticalHeaderStrip = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("LunarTabs_VerticalHeaders"));
 	VerticalPageHost = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LunarTabs_VerticalPageHost"));
-	PageContainer = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("LunarTabs_Pages"));
+	PageContainer = WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(), TEXT("LunarTabs_Pages"));
 
 	if (!GeneratedRoot || !HorizontalLayout || !HorizontalHeaderStrip || !HorizontalPageHost
 		|| !VerticalLayout || !VerticalHeaderStrip || !VerticalPageHost || !PageContainer)
@@ -394,25 +424,6 @@ void ULunarTabs::EnsureNativeLayout()
 	WidgetTree->RootWidget = GeneratedRoot;
 	GeneratedRoot->AddChildToOverlay(HorizontalLayout);
 	GeneratedRoot->AddChildToOverlay(VerticalLayout);
-
-	if (UVerticalBoxSlot* HeaderSlot = HorizontalLayout->AddChildToVerticalBox(HorizontalHeaderStrip))
-	{
-		HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-	}
-	if (UVerticalBoxSlot* PageSlot = HorizontalLayout->AddChildToVerticalBox(HorizontalPageHost))
-	{
-		PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	}
-	if (UHorizontalBoxSlot* HeaderSlot = VerticalLayout->AddChildToHorizontalBox(VerticalHeaderStrip))
-	{
-		HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-	}
-	if (UHorizontalBoxSlot* PageSlot = VerticalLayout->AddChildToHorizontalBox(VerticalPageHost))
-	{
-		PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	}
-
-	HorizontalPageHost->SetContent(PageContainer);
 	if (PreservedOwnerContent && PreservedOwnerContent != GeneratedRoot)
 	{
 		GeneratedRoot->AddChildToOverlay(PreservedOwnerContent);
@@ -420,6 +431,7 @@ void ULunarTabs::EnsureNativeLayout()
 
 	bNativeLayoutInitialized = true;
 	AppliedOrientation = Orientation;
+	AppliedPagePlacement = PagePlacement;
 	ApplyOrientation();
 	ApplyNativePresentation();
 }
@@ -431,6 +443,8 @@ void ULunarTabs::ApplyOrientation()
 		return;
 	}
 
+	HorizontalLayout->ClearChildren();
+	VerticalLayout->ClearChildren();
 	HorizontalHeaderStrip->ClearChildren();
 	VerticalHeaderStrip->ClearChildren();
 	for (const FLunarTabDescriptor& Descriptor : TabDescriptors)
@@ -451,20 +465,70 @@ void ULunarTabs::ApplyOrientation()
 	}
 
 	PageContainer->RemoveFromParent();
-	if (Orientation == Orient_Horizontal)
+	const ELunarTabPagePlacement ResolvedPlacement = ResolvePagePlacement();
+	UWidget* HeaderStrip = Orientation == Orient_Horizontal
+		? static_cast<UWidget*>(HorizontalHeaderStrip)
+		: static_cast<UWidget*>(VerticalHeaderStrip);
+	if (ResolvedPlacement == ELunarTabPagePlacement::Top
+		|| ResolvedPlacement == ELunarTabPagePlacement::Bottom)
 	{
 		HorizontalPageHost->SetContent(PageContainer);
+		if (ResolvedPlacement == ELunarTabPagePlacement::Top)
+		{
+			if (UVerticalBoxSlot* PageSlot = HorizontalLayout->AddChildToVerticalBox(HorizontalPageHost))
+			{
+				PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+			if (UVerticalBoxSlot* HeaderSlot = HorizontalLayout->AddChildToVerticalBox(HeaderStrip))
+			{
+				HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		}
+		else
+		{
+			if (UVerticalBoxSlot* HeaderSlot = HorizontalLayout->AddChildToVerticalBox(HeaderStrip))
+			{
+				HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+			if (UVerticalBoxSlot* PageSlot = HorizontalLayout->AddChildToVerticalBox(HorizontalPageHost))
+			{
+				PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+		}
 		HorizontalLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		VerticalLayout->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	else
 	{
 		VerticalPageHost->SetContent(PageContainer);
+		if (ResolvedPlacement == ELunarTabPagePlacement::Left)
+		{
+			if (UHorizontalBoxSlot* PageSlot = VerticalLayout->AddChildToHorizontalBox(VerticalPageHost))
+			{
+				PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+			if (UHorizontalBoxSlot* HeaderSlot = VerticalLayout->AddChildToHorizontalBox(HeaderStrip))
+			{
+				HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+		}
+		else
+		{
+			if (UHorizontalBoxSlot* HeaderSlot = VerticalLayout->AddChildToHorizontalBox(HeaderStrip))
+			{
+				HeaderSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			}
+			if (UHorizontalBoxSlot* PageSlot = VerticalLayout->AddChildToHorizontalBox(VerticalPageHost))
+			{
+				PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			}
+		}
 		HorizontalLayout->SetVisibility(ESlateVisibility::Collapsed);
 		VerticalLayout->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 
 	AppliedOrientation = Orientation;
+	AppliedPagePlacement = PagePlacement;
 	InvalidateLayoutAndVolatility();
 	if (ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem())
 	{
@@ -472,9 +536,20 @@ void ULunarTabs::ApplyOrientation()
 	}
 }
 
+ELunarTabPagePlacement ULunarTabs::ResolvePagePlacement() const
+{
+	if (PagePlacement != ELunarTabPagePlacement::Automatic)
+	{
+		return PagePlacement;
+	}
+	return Orientation == Orient_Horizontal
+		? ELunarTabPagePlacement::Bottom
+		: ELunarTabPagePlacement::Right;
+}
+
 void ULunarTabs::ResetGeneratedTabs()
 {
-	for (const TPair<FName, TObjectPtr<UUserWidget>>& Pair : PageWidgets)
+	for (const TPair<FName, TObjectPtr<ULunarTabPage>>& Pair : PageWidgets)
 	{
 		if (Pair.Value)
 		{
@@ -555,8 +630,7 @@ bool ULunarTabs::BuildHeaders()
 
 ULunarTabHeader* ULunarTabs::CreateHeaderWidget(const FLunarTabDescriptor& Descriptor)
 {
-	UUserWidget* HeaderWidget = LunarTabs_Private::CreateUserWidgetForTabs(this, Descriptor.HeaderWidgetClass);
-	ULunarTabHeader* Header = Cast<ULunarTabHeader>(HeaderWidget);
+	ULunarTabHeader* Header = LunarTabs_Private::CreateUserWidgetForTabs(this, Descriptor.HeaderWidgetClass);
 	if (Header)
 	{
 		Header->InitializeTabHeader(this, Descriptor.TabId, Descriptor.bEnabled, Descriptor.DisabledReason);
@@ -564,14 +638,14 @@ ULunarTabHeader* ULunarTabs::CreateHeaderWidget(const FLunarTabDescriptor& Descr
 	return Header;
 }
 
-UUserWidget* ULunarTabs::CreatePageWidget(const FLunarTabDescriptor& Descriptor)
+ULunarTabPage* ULunarTabs::CreatePageWidget(const FLunarTabDescriptor& Descriptor)
 {
-	if (TObjectPtr<UUserWidget>* ExistingPage = PageWidgets.Find(Descriptor.TabId))
+	if (TObjectPtr<ULunarTabPage>* ExistingPage = PageWidgets.Find(Descriptor.TabId))
 	{
 		return IsValid(ExistingPage->Get()) ? ExistingPage->Get() : nullptr;
 	}
 
-	UUserWidget* Page = Descriptor.PageWidgetInstance;
+	ULunarTabPage* Page = Descriptor.PageWidgetInstance;
 	if (Page)
 	{
 		if (Page->GetParent() && Page->GetParent() != PageContainer)
@@ -592,8 +666,9 @@ UUserWidget* ULunarTabs::CreatePageWidget(const FLunarTabDescriptor& Descriptor)
 		return nullptr;
 	}
 
+	Page->AssignTabContext(this, Descriptor.TabId);
 	Page->SetVisibility(ESlateVisibility::Collapsed);
-	if (!PageContainer || !PageContainer->AddChildToOverlay(Page))
+	if (!PageContainer || !PageContainer->AddChild(Page))
 	{
 		ReportTabsError(FString::Printf(
 			TEXT("Failed to attach page for tab '%s'."),
@@ -612,7 +687,7 @@ void ULunarTabs::DestroyRecreatedPage(const FName TabId)
 	{
 		return;
 	}
-	if (TObjectPtr<UUserWidget>* Page = PageWidgets.Find(TabId))
+	if (TObjectPtr<ULunarTabPage>* Page = PageWidgets.Find(TabId))
 	{
 		if (Page->Get())
 		{
@@ -651,16 +726,18 @@ bool ULunarTabs::ActivateTabByIdInternal(
 
 	if (TabId == ActiveTabId)
 	{
-		if (UUserWidget* ExistingPage = GetPageWidgetById(TabId))
+		if (ULunarTabPage* ExistingPage = GetPageWidgetById(TabId))
 		{
 			ExistingPage->SetVisibility(ESlateVisibility::Visible);
+			PageContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			PageContainer->SetActiveWidget(ExistingPage);
 			return true;
 		}
 	}
 
 	bActivationInProgress = true;
 	const FName PreviousTabId = ActiveTabId;
-	UUserWidget* PreviousPage = GetPageWidgetById(PreviousTabId);
+	ULunarTabPage* PreviousPage = GetPageWidgetById(PreviousTabId);
 	ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
 
 	if (NavigationSubsystem && PreviousPage)
@@ -686,7 +763,7 @@ bool ULunarTabs::ActivateTabByIdInternal(
 		}
 	}
 
-	UUserWidget* RequestedPage = CreatePageWidget(*Descriptor);
+	ULunarTabPage* RequestedPage = CreatePageWidget(*Descriptor);
 	if (!RequestedPage)
 	{
 		bActivationInProgress = false;
@@ -697,6 +774,8 @@ bool ULunarTabs::ActivateTabByIdInternal(
 
 	// The page becomes eligible before graph rebuild, restoration, or fallback calculation.
 	RequestedPage->SetVisibility(ESlateVisibility::Visible);
+	PageContainer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	PageContainer->SetActiveWidget(RequestedPage);
 	if (PreviousPage && PreviousPage != RequestedPage)
 	{
 		PreviousPage->SetVisibility(ESlateVisibility::Collapsed);
@@ -719,12 +798,79 @@ bool ULunarTabs::ActivateTabByIdInternal(
 	if (!PreviousTabId.IsNone() && PreviousTabId != ActiveTabId)
 	{
 		DestroyRecreatedPage(PreviousTabId);
+		PageContainer->SetActiveWidget(RequestedPage);
 	}
 
 	bActivationInProgress = false;
 	if (bBroadcastChange && PreviousTabId != ActiveTabId)
 	{
 		OnActiveTabChanged.Broadcast(this, PreviousTabId, ActiveTabId);
+	}
+	return true;
+}
+
+bool ULunarTabs::ClearActiveTabInternal(const bool bBroadcastChange)
+{
+	if (!bAllowNoActiveTab || bActivationInProgress)
+	{
+		return false;
+	}
+	if (ActiveTabId.IsNone())
+	{
+		return true;
+	}
+
+	bActivationInProgress = true;
+	const FName PreviousTabId = ActiveTabId;
+	ULunarTabPage* PreviousPage = GetPageWidgetById(PreviousTabId);
+	ULunarTabHeader* PreviousHeader = HeaderWidgets.FindRef(PreviousTabId);
+	ULunarNavigationSubsystem* NavigationSubsystem = ResolveNavigationSubsystem();
+	if (NavigationSubsystem && PreviousPage)
+	{
+		ULunarNavigableWidget* Selection = NavigationSubsystem->GetSelectedWidget();
+		if (Selection && IsWidgetInsidePage(Selection, PreviousPage))
+		{
+			if (!Selection->GetNavigationId().IsNone())
+			{
+				LastPageDescendantNavigationIds.Add(PreviousTabId, Selection->GetNavigationId());
+			}
+			if (!PreviousHeader || !NavigationSubsystem->SetSelectedWidget(PreviousHeader))
+			{
+				bActivationInProgress = false;
+				ReportTabsError(FString::Printf(
+					TEXT("Could not transfer Selection to header '%s' before clearing the active tab."),
+					*PreviousTabId.ToString()));
+				return false;
+			}
+		}
+	}
+
+	if (PreviousPage)
+	{
+		PreviousPage->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (PageContainer)
+	{
+		PageContainer->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	ActiveTabId = NAME_None;
+	for (const TPair<FName, TObjectPtr<ULunarTabHeader>>& Pair : HeaderWidgets)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetActiveTabHeader(false);
+		}
+	}
+	ApplyNativePresentation();
+	if (NavigationSubsystem)
+	{
+		NavigationSubsystem->RefreshNavigationGraph();
+	}
+	DestroyRecreatedPage(PreviousTabId);
+	bActivationInProgress = false;
+	if (bBroadcastChange)
+	{
+		OnActiveTabChanged.Broadcast(this, PreviousTabId, NAME_None);
 	}
 	return true;
 }
@@ -753,6 +899,10 @@ const FLunarTabDescriptor* ULunarTabs::FindTabDescriptor(const FName TabId) cons
 
 FName ULunarTabs::ChooseInitialActiveTabId(const FName RequestedTabId) const
 {
+	if (RequestedTabId.IsNone() && bAllowNoActiveTab)
+	{
+		return NAME_None;
+	}
 	if (IsTabEnabled(RequestedTabId))
 	{
 		return RequestedTabId;
@@ -823,14 +973,20 @@ ULunarNavigableWidget* ULunarTabs::ResolveHeaderDirectionTarget(
 	const bool bAlongStrip = Orientation == Orient_Horizontal
 		? Direction == ELunarNavigationDirection::Left || Direction == ELunarNavigationDirection::Right
 		: Direction == ELunarNavigationDirection::Up || Direction == ELunarNavigationDirection::Down;
+	const ELunarTabPagePlacement ResolvedPlacement = ResolvePagePlacement();
+	const bool bTowardPage =
+		(ResolvedPlacement == ELunarTabPagePlacement::Top && Direction == ELunarNavigationDirection::Up)
+		|| (ResolvedPlacement == ELunarTabPagePlacement::Bottom && Direction == ELunarNavigationDirection::Down)
+		|| (ResolvedPlacement == ELunarTabPagePlacement::Left && Direction == ELunarNavigationDirection::Left)
+		|| (ResolvedPlacement == ELunarTabPagePlacement::Right && Direction == ELunarNavigationDirection::Right);
 	if (bAlongStrip)
 	{
-		return FindAdjacentHeader(CurrentHeader, Direction);
+		if (ULunarTabHeader* AdjacentHeader = FindAdjacentHeader(CurrentHeader, Direction))
+		{
+			return AdjacentHeader;
+		}
+		return bTowardPage ? ResolveActivePageEntryTarget() : nullptr;
 	}
-
-	const bool bTowardPage = Orientation == Orient_Horizontal
-		? Direction == ELunarNavigationDirection::Down
-		: Direction == ELunarNavigationDirection::Right;
 	return bTowardPage ? ResolveActivePageEntryTarget() : nullptr;
 }
 
@@ -1048,6 +1204,147 @@ void ULunarTabs::RefreshAllHeaderPresentations()
 	}
 	ApplyNativePresentation();
 }
+
+TArray<FString> ULunarTabs::GetDesignerPreviewTabIdOptions() const
+{
+	TArray<FString> Options;
+	Options.Reserve(TabDescriptors.Num());
+	for (const FLunarTabDescriptor& Descriptor : TabDescriptors)
+	{
+		if (!Descriptor.TabId.IsNone())
+		{
+			Options.Add(Descriptor.TabId.ToString());
+		}
+	}
+	return Options;
+}
+
+#if WITH_EDITOR
+void ULunarTabs::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	const FName ChangedPropertyName = PropertyChangedEvent.GetPropertyName();
+	const FName MemberPropertyName = PropertyChangedEvent.MemberProperty
+		? PropertyChangedEvent.MemberProperty->GetFName()
+		: NAME_None;
+	const bool bPreviewSelectionChanged =
+		ChangedPropertyName == GET_MEMBER_NAME_CHECKED(ULunarTabs, DesignerPreviewTabId)
+		|| MemberPropertyName == GET_MEMBER_NAME_CHECKED(ULunarTabs, DesignerPreviewTabId)
+		|| ChangedPropertyName == GET_MEMBER_NAME_CHECKED(ULunarTabs, bDesignerPreviewNoActiveTab)
+		|| MemberPropertyName == GET_MEMBER_NAME_CHECKED(ULunarTabs, bDesignerPreviewNoActiveTab);
+	TGuardValue<bool> SelectionChangeGuard(
+		bDesignerPreviewSelectionChangeInProgress,
+		bPreviewSelectionChanged);
+	const bool bHadCachedSlateWidget = GetCachedWidget().IsValid();
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	if (!IsDesignTime())
+	{
+		return;
+	}
+
+	// UWidget::PostEditChangeProperty already calls SynchronizeProperties when a live Slate widget
+	// exists. Designer templates have no cached Slate widget, so synchronize only that path here.
+	if (!bHadCachedSlateWidget)
+	{
+		SynchronizeProperties();
+	}
+	if (PageContainer)
+	{
+		PageContainer->InvalidateLayoutAndVolatility();
+	}
+	InvalidateLayoutAndVolatility();
+	ForceLayoutPrepass();
+}
+
+void ULunarTabs::RebuildDesignerPreview()
+{
+	if (bDesignerPreviewRebuildInProgress || !IsDesignTime() || !bNativeLayoutInitialized)
+	{
+		return;
+	}
+
+	TGuardValue<bool> RebuildGuard(bDesignerPreviewRebuildInProgress, true);
+	FString ValidationError;
+	if (!ValidateTabDescriptors(TabDescriptors, ValidationError))
+	{
+		ResetGeneratedTabs();
+		ApplyOrientation();
+		ApplyNativePresentation();
+		return;
+	}
+
+	const FName AuthoredActiveTabId = ActiveTabId;
+	const bool bWasTabsInitialized = bTabsInitialized;
+	const FName PreviewTabId = ResolveDesignerPreviewTabId();
+	ActiveTabId = PreviewTabId;
+	const TArray<FLunarTabDescriptor> PreviewDescriptors = TabDescriptors;
+	SetTabs(PreviewDescriptors, ELunarChangeNotificationPolicy::Silent);
+	for (const FLunarTabDescriptor& Descriptor : TabDescriptors)
+	{
+		if (!CreatePageWidget(Descriptor))
+		{
+			ResetGeneratedTabs();
+			ApplyOrientation();
+			ApplyNativePresentation();
+			ActiveTabId = AuthoredActiveTabId;
+			bTabsInitialized = bWasTabsInitialized;
+			return;
+		}
+	}
+	ActiveTabId = AuthoredActiveTabId;
+	bTabsInitialized = bWasTabsInitialized;
+	ApplyDesignerPreviewSelection();
+}
+
+void ULunarTabs::ApplyDesignerPreviewSelection()
+{
+	const FName PreviewTabId = ResolveDesignerPreviewTabId();
+	ULunarTabPage* PreviewPage = nullptr;
+	for (const TPair<FName, TObjectPtr<ULunarTabPage>>& Pair : PageWidgets)
+	{
+		if (Pair.Value)
+		{
+			if (Pair.Key == PreviewTabId)
+			{
+				PreviewPage = Pair.Value;
+			}
+			Pair.Value->SetVisibility(Pair.Key == PreviewTabId
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
+		}
+	}
+	for (const TPair<FName, TObjectPtr<ULunarTabHeader>>& Pair : HeaderWidgets)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetActiveTabHeader(Pair.Key == PreviewTabId);
+		}
+	}
+	RefreshAllHeaderPresentations();
+	if (PageContainer)
+	{
+		PageContainer->SetVisibility(PreviewPage
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+		if (PreviewPage)
+		{
+			PageContainer->SetActiveWidget(PreviewPage);
+		}
+		PageContainer->InvalidateLayoutAndVolatility();
+	}
+}
+
+FName ULunarTabs::ResolveDesignerPreviewTabId() const
+{
+	if (bDesignerPreviewNoActiveTab && bAllowNoActiveTab)
+	{
+		return NAME_None;
+	}
+	const FName RequestedTabId = DesignerPreviewTabId.IsNone()
+		? ActiveTabId
+		: DesignerPreviewTabId;
+	return ChooseInitialActiveTabId(RequestedTabId);
+}
+#endif
 
 void ULunarTabs::ReportTabsError(const FString& Message) const
 {

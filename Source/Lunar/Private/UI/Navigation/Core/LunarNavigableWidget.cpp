@@ -299,10 +299,11 @@ void ULunarNavigableWidget::NativeTick(const FGeometry& MyGeometry, const float 
 		SynchronizeLunarAccessibility();
 		RefreshVisualState();
 	}
-	if ((bPointerHovered || bPointerPressed) && !CanReceiveLunarPointerPresentation())
+	if ((IsPointerHoveredForPresentation() || bPointerPressed) && !CanReceiveLunarPointerPresentation())
 	{
 		CancelPointerPress();
 		bPointerHovered = false;
+		bContextMenuPointerHovered = false;
 		RefreshVisualState();
 		UpdateInputPromptHostVisibility();
 	}
@@ -397,6 +398,7 @@ void ULunarNavigableWidget::SetLunarEnabled(const bool bEnabled)
 	if (!CanReceiveLunarPointerPresentation())
 	{
 		bPointerHovered = false;
+		bContextMenuPointerHovered = false;
 	}
 
 	bLastKnownEffectivelyInteractive = IsEffectivelyInteractive();
@@ -497,7 +499,7 @@ void ULunarNavigableWidget::RefreshVisualState()
 		{
 			NewVisualState.InteractionState = bPointerPressed
 				? ELunarUIInteractionState::PointerPressed
-				: (bPointerHovered ? ELunarUIInteractionState::PointerHovered : ELunarUIInteractionState::PointerNormal);
+				: (IsPointerHoveredForPresentation() ? ELunarUIInteractionState::PointerHovered : ELunarUIInteractionState::PointerNormal);
 		}
 		else
 		{
@@ -767,7 +769,7 @@ void ULunarNavigableWidget::UpdateInputPromptHostVisibility()
 			const bool bPointerPresentationActive = NavigationSubsystem
 				&& NavigationSubsystem->IsPointerPresentationActive();
 			bShowHost = bPointerPresentationActive
-				? bPointerHovered
+				? IsPointerHoveredForPresentation()
 				: bLunarSelected;
 			break;
 		}
@@ -853,8 +855,12 @@ void ULunarNavigableWidget::NativeOnMouseEnter(const FGeometry& InGeometry, cons
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
 	if (CanReceiveLunarPointerPresentation() && !InMouseEvent.IsTouchEvent())
 	{
+		const bool bWasPointerHovered = IsPointerHoveredForPresentation();
 		bPointerHovered = true;
-		PlayPointerHoveredFeedback();
+		if (!bWasPointerHovered)
+		{
+			PlayPointerHoveredFeedback();
+		}
 		RefreshVisualState();
 		UpdateInputPromptHostVisibility();
 	}
@@ -1493,6 +1499,29 @@ bool ULunarNavigableWidget::CanReceiveLunarPointerPresentation() const
 {
 	return bCanInteractWithPointer
 		&& (IsEffectivelyInteractive() || CanInspectDisabledControlWithDirectInput(bCanInteractWithPointer));
+}
+
+void ULunarNavigableWidget::SetContextMenuPointerHovered(const bool bHovered)
+{
+	const bool bResolvedHovered = bHovered && CanReceiveLunarPointerPresentation();
+	if (bContextMenuPointerHovered == bResolvedHovered)
+	{
+		return;
+	}
+
+	const bool bWasPointerHovered = IsPointerHoveredForPresentation();
+	bContextMenuPointerHovered = bResolvedHovered;
+	if (!bWasPointerHovered && IsPointerHoveredForPresentation())
+	{
+		PlayPointerHoveredFeedback();
+	}
+	RefreshVisualState();
+	UpdateInputPromptHostVisibility();
+}
+
+bool ULunarNavigableWidget::IsPointerHoveredForPresentation() const
+{
+	return bPointerHovered || bContextMenuPointerHovered;
 }
 
 void ULunarNavigableWidget::SynchronizeLunarAccessibility()

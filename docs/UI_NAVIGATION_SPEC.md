@@ -1,6 +1,6 @@
 # Lunar Custom UI Navigation System Specification
 
-Status: C++ implementation complete; owner Content verification in progress
+Status: base C++ implementation complete; owner Content verification and approved control extensions in progress
 
 Target: Unreal Engine 5.8, Win64
 
@@ -21,7 +21,7 @@ The system must provide:
 - gameplay input isolation while Lunar UI is active;
 - reusable state publication with fully Blueprint-owned presentation for every Lunar control;
 - extensible input prompts with device-specific icon sets;
-- common behavior across Button, Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, and Tabs;
+- common behavior across Button, Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, Tabs, Key Selector, Splitter, and Docking controls;
 - actionable diagnostics through the Lunar Console.
 
 The feature is a subsystem and widget framework, not a collection of isolated Blueprint fixes.
@@ -84,7 +84,12 @@ The following concrete control class names are final for V1:
 - `ULunarComboBox`;
 - `ULunarContextMenu`;
 - `ULunarTabs`;
-- `ULunarTabHeader`.
+- `ULunarTabHeader`;
+- `ULunarKeySelector`;
+- `ULunarSplitter`;
+- `ULunarSplitterHandle`;
+- `ULunarDockSpace`;
+- `ULunarDockablePanel`.
 
 ### `ULunarNavigationSubsystem`
 
@@ -167,7 +172,10 @@ The system will provide specialized C++ behavior classes for these V1 controls:
 - ListView and virtualized row presentation;
 - ComboBox;
 - ContextMenu;
-- Tabs and Tab Header.
+- Tabs and Tab Header;
+- Key Selector and runtime Enhanced Input rebinding;
+- multi-panel Splitter and owner-authored Splitter Handle;
+- dynamic DockSpace and abstract Dockable Panel authoring base.
 
 ### Explicit Exclusion: Draggable Window
 
@@ -244,7 +252,7 @@ Runtime implementation files mirror the same feature folders under `Source/Lunar
 Folder responsibilities are:
 
 - Core: subsystem, scope, screen base, navigable-widget base, and private routing helpers;
-- Controls: concrete Button, Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, Tabs, Tab Header, and related widget classes;
+- Controls: concrete Button, Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, Tabs, Tab Header, Key Selector, Splitter, Splitter Handle, DockSpace, Dockable Panel, and related widget classes;
 - Prompts: prompt receiver interface, default C++ prompt base, and prompt host behavior;
 - Data: Icon Set, Action Registry, reusable sound-feedback, and reusable haptic-feedback Data Asset classes;
 - Types: shared public enums, structs, delegates, links, settings fragments, and resolved contexts.
@@ -508,8 +516,9 @@ Bindings are configurable:
 - keys may be added or removed;
 - individual bindings may be disabled;
 - keyboard navigation may be disabled completely;
-- no mandatory Enhanced Input dependency is required for the core system;
-- an Enhanced Input adapter may be added later.
+- the `Lunar` Runtime module and plugin explicitly depend on Unreal Engine 5.8 Enhanced Input;
+- runtime player-mappable rebinding uses `UEnhancedInputUserSettings`, mapping profiles, `FMapPlayerKeyArgs`, and `EPlayerMappableKeySlot` rather than the deprecated `UPlayerMappableInputConfig` path;
+- the existing Action Registry remains the semantic Lunar UI-navigation source and is not replaced by Enhanced Input mappings.
 
 Directional Navigation bindings and Increase/Decrease bindings intentionally overlap. One physical event is resolved contextually and is never broadcast as multiple semantic actions:
 
@@ -924,7 +933,7 @@ The advanced parameter defaults to `Notify` on these V1 APIs:
 | `ULunarRadio` | `SetNumOfRadioButtons`, `SetSelectedIndex`, `SetSelectedByStringValue` |
 | `ULunarListView` | item mutation and active-item APIs plus `SetSelectionMode`, `SetItemSelected`, `SetSelectedItemIds`, `SelectAllItems`, `ClearSelection`, `RefreshNavigationItems` |
 | `ULunarComboBox` | `SetOptions`, `SetSelectedOptionById` |
-| `ULunarTabs` | `SetTabs`, `ActivateTabById` |
+| `ULunarTabs` | `SetTabs`, `ActivateTabById`, `ClearActiveTab` |
 
 Saved-state restoration should explicitly select `Silent`. For example, an options menu may load its save data during Pre Construct or Construct and call `SetSelectedIndex(SavedQualityIndex, Silent)` and `SetValue(SavedVolume, Silent)`. The controls visibly restore the saved values, but the graphics/audio apply callback and save-writing callback do not execute again. A later player change uses the default `Notify` pin and publishes exactly once. Using the default `Notify` during restoration is valid when reapplying the setting is intentional, but it can otherwise repeat expensive work or rewrite the save.
 
@@ -1189,14 +1198,18 @@ ContextMenu supports nested submenus. Each submenu pushes another scope, and Bac
 
 Navigation focus and active tab are independent. Navigation highlights a Tab Header; Accept activates its page.
 
-| Orientation | Move between Tab Headers | Leave the Tab strip |
-| --- | --- | --- |
-| Horizontal | Left and Right | Up and Down |
-| Vertical | Up and Down | Left and Right |
+`Orientation` controls only how generated Tab Headers are arranged. `PagePlacement` independently places the page host at Top, Bottom, Left, or Right. `Automatic` preserves the conventional layout: Bottom for horizontal headers and Right for vertical headers.
 
-Tab Headers and page contents accept arbitrary nested widgets.
+| Header orientation | Move between Tab Headers |
+| --- | --- |
+| Horizontal | Left and Right |
+| Vertical | Up and Down |
 
-Each tab has a stable Tab ID and either a page widget class or an explicitly supplied page instance. Duplicate Tab IDs and missing page sources are configuration errors.
+Navigation toward the placed page enters its active content. When that direction is also the header-strip axis, enabled adjacent headers take precedence and another press from the nearest edge enters the page. When it is perpendicular to the strip, the page may be entered directly from any header.
+
+`ULunarTabHeader` and `ULunarTabPage` are abstract owner-authoring bases. A concrete Header Blueprint receives `GetTabId`, `GetTabsOwner`, and `IsActiveTab`. A concrete Page Blueprint receives `GetTabId`, `GetTabsOwner`, and `On Lunar Tab Context Changed`, allowing one Page class to present multiple descriptors differently. The Page itself is not selectable and creates no scope; only its eligible Lunar descendants participate in the surrounding screen scope.
+
+Each tab has a stable Tab ID, a concrete Header class, and exactly one page source: a concrete Page class or an explicitly supplied runtime Page instance. Duplicate Tab IDs, invalid base classes, and missing or ambiguous page sources are configuration errors.
 
 Tabs use `ELunarTabPageLifetime`:
 
@@ -1204,13 +1217,81 @@ Tabs use `ELunarTabPageLifetime`:
 - Eager: create every page when the Tabs control initializes;
 - Recreate On Activation: destroy the inactive page and create a new instance the next time it activates.
 
-Inactive retained pages use Collapsed visibility. Their descendants remain registered with the scope but are ineligible while Collapsed. Activating a page makes it visible before graph validation and scroll/fallback calculation.
+The page host is a single-active-child switcher. Inactive retained pages are Collapsed and their descendants are ineligible and absent from the active navigation graph. Activating a page makes it visible before graph validation and scroll/fallback calculation.
 
-Accept on a Tab Header activates the page but keeps Lunar Selection on the header. Perpendicular navigation may then leave the strip and enter the active page. Each cached page stores its last valid descendant Navigation ID so re-entry can restore its previous item; otherwise it uses deterministic fallback.
+Accept on a Tab Header activates the page but keeps Lunar Selection on the header. Navigation toward the placed page may then enter its content according to header-axis precedence. Each cached page stores its last valid descendant Navigation ID so re-entry can restore its previous item; otherwise it uses deterministic fallback.
 
 When a page switch is requested programmatically while Selection is inside the old page, Selection first moves to the destination Tab Header. Any delegated text edit follows the deliberate-transition commit rule.
 
+Tabs normally guarantees one active enabled page. `bAllowNoActiveTab` opts into an empty state, and `ClearActiveTab` enters it; when the option is disabled, a clear request is rejected and the active page remains unchanged. Clearing while Selection is inside a page transfers Selection to an eligible Header before hiding the page.
+
+Editor-only Designer Preview exposes a stable preview Tab ID and, when the no-active option is enabled, a no-active preview flag. Changing either property updates both Header state and Page content live in the UMG Designer without requiring Blueprint Compile.
+
 If page creation fails, the current active page remains active, the requested header receives `Rejected`, and an Error is sent to the Lunar Console. Cached pages are destroyed with the Tabs control; Recreate On Activation pages are destroyed after deactivation and Selection transfer completes.
+### Key Selector And Runtime Rebinding
+
+`ULunarKeySelector` is one navigable binding slot. An input action may expose any number of selector widgets; automatic Enhanced Input application supports the seven native UE 5.8 player-mappable slots `First` through `Seventh`. The selector stores a complete `FLunarInputBinding`, not only a display key.
+
+Each binding contains one primary key plus an ordered array of chord keys. Capture modes are `Single`, `Chord`, and `SingleOrChord`. The last qualifying pressed key may become the primary key while the other held keys become chord members. Keyboard, mouse, gamepad, and explicitly enabled mixed-device chords are supported. Device and key-type filters are per selector.
+
+Automatic application has two explicit paths:
+
+- a single-key binding maps directly through `UEnhancedInputUserSettings::MapPlayerKey` and its profile/slot arguments;
+- a chord binding maps automatically only when the owner supplies a mapping recipe that identifies every Enhanced Input mapping and trigger/modifier target required to reproduce the chord.
+
+When no chord recipe exists, Lunar keeps and publishes the full captured chord and requires the owner to apply it through the binding delegates. Lunar must never silently discard modifier keys or apply only the primary key.
+
+Capture is modal per `ULocalPlayer`. Only one selector may capture at a time; captured UI/gameplay input is consumed, normal scope navigation is suspended, and teardown of the selector, screen, player, or world cancels safely. Configurable cancel keys default to Escape and Gamepad Face Button Right. Configurable clear keys default to Backspace and Delete, with optional gamepad keys. Separate flags allow those keys to be captured as ordinary bindings. `bAllowEmptyBinding` controls whether Clear succeeds.
+
+Button-like keys are captured by default. Mouse wheel is treated as digital. Mouse axes, gamepad axes, and analog triggers are opt-in and use activation threshold, release threshold, hysteresis, and hold time so drift cannot create a binding accidentally.
+
+Conflict policy and conflict presentation are separate:
+
+- `Reject` keeps the old binding;
+- `AllowDuplicate` accepts the duplicate;
+- `ClearExisting` clears all conflicting slots that are allowed to become empty;
+- `Swap` exchanges compatible bindings;
+- `OwnerDecision` enters a pending conflict state until `ResolvePendingConflict` is called.
+
+Conflict scope may be the same owner-defined conflict group, all active mapping contexts, or the entire selected profile. Device-family filtering and a custom Blueprint/C++ predicate may narrow the search. `OnKeyConflictDetected` and `OnKeyConflictResolved` publish the requested binding and every affected mapping. Feedback may be Silent, owner notification, or blocking owner UI; Lunar does not require a hard-coded confirmation popup.
+
+`bProtectLastBinding`, per-slot required state, and protected Mapping Names prevent conflict resolution or Clear from removing the final valid binding. `HasAnyValidBinding` and `CanClearBinding` expose the protection decision. A full factory reset is always allowed because it restores the defaults registered by the active Input Mapping Contexts.
+
+Apply modes are `Immediate` and `Deferred`. Deferred mode maintains a pending snapshot per profile; `ApplyPendingBindings` commits it and `CancelPendingBindings` restores the applied snapshot. Optional save behavior calls `ApplySettings`, `SaveSettings`, or `AsyncSaveSettings` only when configured; owner code may persist separately.
+
+Profiles use the Enhanced Input user-settings profile model. The current profile is the default target, with an optional explicit Profile ID. Public operations list, create, duplicate, rename, switch, and delete profiles; the default profile cannot be deleted. Pending changes are isolated per profile, and every visible selector refreshes after a profile switch.
+
+Reset APIs cover one slot, one Mapping Name, a set of mappings, and a complete profile. Defaults come from registered Input Mapping Contexts, never from duplicated hard-coded Lunar tables. Reset supports Immediate or Deferred application, Notify or Silent feedback, optional persistence, and complete affected-slot event payloads. `GetDefaultBinding`, `IsUsingDefault`, and `CanReset` expose reset presentation.
+
+The native fallback presentation shows the resolved key/chord, culture-invariant-by-default None and Press A Key text, pending/conflict state, and a missing-icon-safe device presentation. An owner Blueprint may replace the complete visual composition. Published states are `Idle`, `Capturing`, `Pending`, `Conflict`, `Rejected`, and `Disabled`, with `bIsDefault`, `bIsEmpty`, `bHasPendingChange`, and `bIsChord`. Designer Preview supplies a test state and test chord and obeys Reduce Motion.
+
+### Splitter
+
+`ULunarSplitter` is a non-selectable multi-panel container with Horizontal or Vertical orientation. It accepts any number of child panels and generates exactly `N - 1` handles. Panel sizing supports normalized coefficients, auto/fill rules where valid, per-panel minimum and maximum size, programmatic mutation, and owner-controlled persistence.
+
+Mouse and touch drag a handle directly. `ELunarSplitterResizeMode::Live` is the default and updates layout continuously; `OnRelease` previews the handle position and commits when capture ends. Cancel restores the sizes captured at drag start. Resizing never creates a navigation scope and does not change the Lunar Selection of child controls.
+
+`ULunarSplitterHandle` is an abstract owner-authored presentation base created once for each divider. It receives owning Splitter, handle index, orientation, resize state, current input device, and whether navigation resize is active. The Splitter provides a minimal native fallback when no concrete Handle class is assigned.
+
+Optional keyboard/gamepad resize is disabled by default. When enabled, handles become eligible Lunar targets: Accept begins resize, the splitter axis changes adjacent sizes by `NavigationResizeStep` with normal repeat, perpendicular input exits, Accept commits, and Back restores the pre-edit sizes. Merely selecting a handle does not resize. Min/max constraints are identical for pointer and navigation input.
+
+### Dynamic Docking
+
+`ULunarDockSpace` owns a runtime layout tree composed of split nodes, tab-stack nodes, and empty/fallback areas. `ULunarDockablePanel` is the mandatory abstract owner-authored wrapper for arbitrary panel content. Docking chrome is pointer/touch oriented and is not required to receive gamepad Selection; eligible Lunar controls inside the active panel continue to use the surrounding screen scope.
+
+Dropping on the center of a dock target adds the panel as a tab. Dropping on an edge creates a split in that direction. Dropping into an empty area fills it. A drop-preview layer shows the exact destination before commit. Empty tab stacks and redundant split branches collapse deterministically after a panel moves or closes.
+
+Dropping outside a valid dock target creates a floating panel inside the owning DockSpace overlay. It is not a native operating-system window and does not use or modify `ULunarDraggableWindow`. Floating position, size, z-order, min/max constraints, owner-authored move/resize handles, and redocking are preserved by the DockSpace.
+
+Every panel has a stable `PanelTypeId` and `PanelInstanceId`. Singleton panel types permit one open instance; multi-instance types may create and persist any number. A panel factory restores missing instances from the pair of IDs. Layout restoration skips unavailable panel types, reports them, and collapses resulting empty nodes.
+
+Panels expose `bCanDock`, `bCanFloat`, `bCanClose`, `bCanResize`, close lifetime, fallback dock area, and owner-authored header/tab/drag/close visuals. Close lifetime is `Cached` by default or `DestroyOnClose`. Closing a dirty panel is deferred through `RequestClosePanel`, `OnPanelCloseRequested`, `ConfirmClosePanel`, and `CancelClosePanel`; a pending request blocks duplicates. `ForceClosePanel` is reserved for explicit teardown. Moving, floating, and redocking are never treated as close.
+
+`ULunarDockLayoutAsset` stores an immutable reusable default layout: version, split orientation and ratios, tab stacks and active tabs, panel type/instance IDs, floating rectangles and z-order, and fallback areas. Runtime never mutates the Data Asset. `CaptureLayout`, `ApplyLayout`, `ResetLayout`, JSON import/export, optional `bAutoSaveLayout`, and `LayoutSaveId` provide owner-controlled persistence. Designer Preview may load the assigned asset or inline fallback without saving runtime state.
+
+Cross-DockSpace transfer is allowed only when non-empty `DockingGroupId` values match and both spaces belong to the same Local Player and World. A failed transfer restores the original layout or returns the panel to a floating position in its origin DockSpace. A `None` group confines panels to their original space.
+
+The public DockSpace and Dockable Panel widgets and the Dock Layout Data Asset are registered under Content Browser `Add -> Lunar`; concrete visual Blueprints remain owner-authored. Abstract Dockable Panel and Splitter Handle bases are not added to the Widget Blueprint COMMON parent list.
 
 ## Accessibility And Localization
 
@@ -1313,9 +1394,11 @@ The finalized public support types are:
 - `ULunarInputPromptReceiver` and `ILunarInputPromptReceiver`;
 - `ULunarInputPromptWidget`, the default abstract C++ prompt widget base;
 - `ULunarRadioSideVisual`, the optional abstract non-navigable Blueprint presentation generated once per Radio option;
-- `ULunarListViewEntry`, the optional abstract non-navigable Blueprint presentation generated only for visible ListView rows.
+- `ULunarListViewEntry`, the optional abstract non-navigable Blueprint presentation generated only for visible ListView rows;
+- `ULunarSplitterHandle`, the optional abstract owner-authored presentation for a generated Splitter divider;
+- `ULunarDockLayoutAsset`, the immutable reusable default DockSpace layout Data Asset.
 
-Icon Set, Action Registry, Sound Feedback, and Haptic Feedback classes derive from `UDataAsset`. `ULunarInputPromptWidget`, `ULunarRadioSideVisual`, and `ULunarListViewEntry` derive from `UUserWidget`. Visual controls derive from `ULunarNavigableWidget` except `ULunarScrollBox`, which derives from `UScrollBox`; generated Radio side visuals and ListView entries do not participate in navigation.
+Icon Set, Action Registry, Sound Feedback, Haptic Feedback, and Dock Layout Asset classes derive from `UDataAsset`. `ULunarInputPromptWidget`, `ULunarRadioSideVisual`, `ULunarListViewEntry`, `ULunarSplitterHandle`, and `ULunarDockablePanel` derive from `UUserWidget`. Navigable visual controls derive from `ULunarNavigableWidget`; non-selectable layout controls use their appropriate UMG panel base. Generated Radio side visuals, ListView entries, Splitter handles unless navigation resize is enabled, DockSpace chrome, and Dockable Panel wrappers do not participate in navigation.
 
 ### Final Enums
 
@@ -1340,6 +1423,17 @@ Icon Set, Action Registry, Sound Feedback, and Haptic Feedback classes derive fr
 | `ELunarSwitchDirectionMode` | `Disabled`, `Horizontal`, `Vertical` |
 | `ELunarRadioSideVisualPlacement` | `TopLeft`, `TopCenter`, `TopRight`, `CenterLeft`, `Center`, `CenterRight`, `BottomLeft`, `BottomCenter`, `BottomRight` |
 | `ELunarTabPageLifetime` | `LazyCached`, `Eager`, `RecreateOnActivation` |
+| `ELunarTabPagePlacement` | `Automatic`, `Top`, `Bottom`, `Left`, `Right` |
+| `ELunarKeyCaptureMode` | `Single`, `Chord`, `SingleOrChord` |
+| `ELunarKeySelectorState` | `Idle`, `Capturing`, `Pending`, `Conflict`, `Rejected`, `Disabled` |
+| `ELunarKeyBindingApplyMode` | `Immediate`, `Deferred` |
+| `ELunarKeyConflictPolicy` | `Reject`, `AllowDuplicate`, `ClearExisting`, `Swap`, `OwnerDecision` |
+| `ELunarKeyConflictScope` | `SameConflictGroup`, `ActiveMappingContexts`, `EntireProfile`, `Custom` |
+| `ELunarKeyConflictFeedbackMode` | `Silent`, `OwnerNotification`, `BlockingOwnerUI` |
+| `ELunarSplitterResizeMode` | `Live`, `OnRelease` |
+| `ELunarDockPanelLifetime` | `Cached`, `DestroyOnClose` |
+| `ELunarDockPanelMultiplicity` | `Singleton`, `MultiInstance` |
+| `ELunarDockDropZone` | `None`, `Center`, `Top`, `Bottom`, `Left`, `Right`, `Float` |
 | `ELunarNavigationValidationLevel` | `Disabled`, `ErrorsOnly`, `WarningsAndErrors`, `All` |
 
 The existing `ELunarInputDeviceType` remains the canonical device enum, and `ELunarConsoleMessageVerbosity` is reused by validation messages sent to the Lunar Console. Standard Unreal `EOrientation`, `EInputEvent`, and `EEasingFunc::Type` are reused instead of adding Lunar duplicates.
@@ -1375,6 +1469,14 @@ The existing `ELunarInputDeviceType` remains the canonical device enum, and `ELu
 | `FLunarRadioInteractionStyleSet` | Pointer Normal/Hovered/Pressed plus Navigation Normal/Selected/Pressed styles |
 | `FLunarComboBoxOption` | `OptionId`, `DisplayText`, `bEnabled`, `bCanReceiveSelectionWhenDisabled`, `DisabledReason`, `Payload` |
 | `FLunarTabDescriptor` | `TabId`, `HeaderWidgetClass`, `PageWidgetClass`, `PageWidgetInstance`, `bEnabled`, `DisabledReason` |
+| `FLunarInputBinding` | `PrimaryKey`, ordered `ChordKeys`, device/type metadata |
+| `FLunarKeyBindingTarget` | Mapping Name, profile, native player-mappable slot, conflict group, required/protected state |
+| `FLunarKeyChordMappingRecipe` | explicit Enhanced Input mapping and trigger/modifier targets for lossless chord application |
+| `FLunarKeyConflictEntry` | conflicting target, current binding, requested binding, device and protection state |
+| `FLunarSplitterPanelSlot` | child, sizing rule, coefficient, minimum size, maximum size |
+| `FLunarSplitterLayout` | orientation and normalized panel sizes |
+| `FLunarDockPanelKey` | `PanelTypeId`, `PanelInstanceId` |
+| `FLunarDockLayout` | versioned split/tab/floating node tree and fallback metadata |
 | `FLunarNavigationValidationMessage` | `Verbosity`, `Code`, `Message`, `OwnerPath` |
 
 ### Final Settings Structs And Properties
@@ -1490,8 +1592,15 @@ Action dispatch enters the non-overridable public wrappers `CanHandleLunarAction
 | `ULunarListViewEntry` | `OwningListView`, `ItemIndex`, `ItemData`, `VisualState`, `bIsActiveItem`, `bIsSelectedItem` | corresponding getters | Blueprint events `On List View Item Data Changed` and `On List View Item Visual State Changed(State, IsActiveItem, IsSelectedItem)` |
 | `ULunarComboBox` | `Options`, `SelectedOptionId`, `bAllowEmptySelection`, recovery/placeholder, optional Selected/Entry/Empty visual classes, placement, orientation, wrap, popup sizing/scope, external-filter retention, interpolation, inline fallback styles, Designer Preview | option/selection APIs; `OpenComboBox`, `CloseComboBox`, `IsComboBoxOpen`; `SetFilterText`, `GetFilterText`, `ClearFilter`, `RefreshFilter`, `DoesOptionMatchFilter`; Arrow/Popup presentation Set/Get/Configure/Get | `OnSelectionChanged(ComboBox, PreviousOptionId, NewOptionId)`, `OnComboBoxOpened(ComboBox)`, `OnComboBoxClosed(ComboBox)`, `OnFilterTextChanged(ComboBox, PreviousFilterText, NewFilterText)` |
 | `ULunarContextMenu` | `bRestoreSelectionOnOpen` | `OpenContextMenu`, `CloseContextMenu`, `IsContextMenuOpen` | `OnContextMenuOpened(ContextMenu)`, `OnContextMenuClosed(ContextMenu)` |
-| `ULunarTabs` | `TabDescriptors`, `ActiveTabId`, `PageLifetime` | `SetTabs`, `ActivateTabById`, `GetActiveTabId`, `GetPageWidgetById` | `OnActiveTabChanged(Tabs, PreviousTabId, NewTabId)` |
-| `ULunarTabHeader` | `TabId`, `TabsOwner` | `GetTabId`, `GetTabsOwner` | base delegates only |
+| `ULunarTabs` | `TabDescriptors`, `ActiveTabId`, `PageLifetime`, `bAllowNoActiveTab`, `Orientation`, `PagePlacement`, editor-only Designer Preview | `SetTabs`, `ActivateTabById`, `ClearActiveTab`, `GetActiveTabId`, `GetPageWidgetById` plus Active Indicator/Page presentation Set/Get/Configure/Get | `OnActiveTabChanged(Tabs, PreviousTabId, NewTabId)` |
+| `ULunarTabHeader` | generated `TabId`, `TabsOwner` | `GetTabId`, `GetTabsOwner`, `IsActiveTab` | base delegates only |
+| `ULunarTabPage` | generated `TabId`, `TabsOwner` | `GetTabId`, `GetTabsOwner` | Blueprint event `On Lunar Tab Context Changed(TabsOwner, PreviousTabId, NewTabId)` |
+| `ULunarKeySelector` | binding target, Capture Mode, allowed devices/types, analog thresholds, cancel/clear keys, empty/protection policy, conflict policy/scope/feedback, Apply Mode, optional profile and chord recipe, Designer Preview | `BeginCapture`, `CancelCapture`, `ClearBinding`, `GetBinding`, `SetBinding`, `ResolvePendingConflict`, `ApplyPendingBindings`, `CancelPendingBindings`, profile operations, reset/default queries | `OnKeySelectorStateChanged`, `OnBindingChanged`, `OnKeyConflictDetected`, `OnKeyConflictResolved`, `OnBindingReset` |
+| `ULunarSplitter` | Orientation, Resize Mode, panel slots, optional Handle class, Navigation Resize settings | `SetPanelSizes`, `GetPanelSizes`, `ResetPanelSizes`, `BeginHandleResize`, `CommitHandleResize`, `CancelHandleResize` | `OnSplitterResizeStarted`, `OnSplitterSizesChanged`, `OnSplitterResizeFinished` |
+| `ULunarSplitterHandle` | generated Owner and Handle Index | owner/index/state getters | Blueprint event `On Lunar Splitter Handle Context Changed` |
+| `ULunarDockSpace` | default Layout Asset or inline layout, Docking Group ID, auto-save settings, floating bounds | panel open/close/move/float/redock APIs; `CaptureLayout`, `ApplyLayout`, `ResetLayout`, JSON import/export | layout/panel move/open/close/drop-preview delegates |
+| `ULunarDockablePanel` | Panel Type/Instance IDs, multiplicity, dock/float/close/resize flags, lifetime, min/max, fallback area | context getters, `RequestClosePanel`, `ConfirmClosePanel`, `CancelClosePanel`, `ForceClosePanel` | `OnPanelCloseRequested` and panel context/lifecycle Blueprint events |
+| `ULunarDockLayoutAsset` | immutable `FLunarDockLayout` default | validation/query functions | none |
 
 `FLunarListViewItemData` is the complete logical item contract: stable `ItemId`, culture-invariant-by-default `FText DisplayText`, `bEnabled`, `bCanReceiveSelectionWhenDisabled`, and culture-invariant-by-default `FText DisabledReason`. `ULunarListViewEntry` is presentation-only and must not be registered as a separate Lunar navigation target.
 
@@ -1521,7 +1630,13 @@ Action dispatch enters the non-overridable public wrappers `CanHandleLunarAction
 - `FLunarComboBoxSelectionChangedSignature`;
 - `FLunarComboBoxStateChangedSignature`;
 - `FLunarContextMenuStateChangedSignature`;
-- `FLunarTabsActiveTabChangedSignature`.
+- `FLunarTabsActiveTabChangedSignature`;
+- `FLunarKeySelectorStateChangedSignature`;
+- `FLunarInputBindingChangedSignature`;
+- `FLunarKeyConflictSignature`;
+- `FLunarSplitterResizeSignature`;
+- `FLunarDockPanelEventSignature`;
+- `FLunarDockLayoutChangedSignature`.
 
 The existing `FLunarInputDeviceChangedSignature` remains the subsystem and Raw Input device-only signal. Widget instances use `FLunarNavigableInputDeviceChangedSignature` so external subscribers also receive the emitting widget.
 
@@ -1567,7 +1682,7 @@ There is no Default Styles settings section. Visual presentation is authored in 
 
 ## Design Closure
 
-All V1 architecture, behavior, lifecycle, input, validation, accessibility, editor integration, source layout, and public API naming decisions are resolved. C++ implementation is active; owner runtime verification remains a separate ordered pass.
+All base V1 architecture and the approved Key Selector, Splitter, and Dynamic Docking extension behavior are resolved. C++ implementation is active; owner runtime verification remains a separate ordered pass.
 
 Owner-created Content asset instances and their future verified package paths are deferred by the explicit Content ownership boundary. They are integration inputs, not unresolved C++ design questions.
 
@@ -1628,6 +1743,14 @@ Owner-created Content asset instances and their future verified package paths ar
 - manually verify mouse, keyboard, Xbox, and PlayStation 5 behavior;
 - verify that handled UI input does not reach gameplay;
 - update roadmap, README, and Doxygen documentation; use only owner-provided screenshots and Content examples.
+### Phase 8: Approved Control Extensions
+
+- add the required Enhanced Input runtime/plugin dependency and implement `ULunarKeySelector` against UE 5.8 user settings and mapping profiles;
+- implement lossless capture, modal isolation, conflicts, protection, Immediate/Deferred application, profiles, registered-default reset, native fallback, owner-authored presentation, Designer Preview, and diagnostics;
+- implement arbitrary-child `ULunarSplitter`, generated owner-authored handles, pointer/touch resizing, optional navigation resize, constraints, persistence, and diagnostics;
+- implement `ULunarDockSpace`, abstract `ULunarDockablePanel`, `ULunarDockLayoutAsset`, dynamic split/tab layout, floating panels, cross-space transfer, close confirmation, persistence, Designer Preview, and diagnostics;
+- register every new public widget and Data Asset in Content Browser `Add -> Lunar`, expose concrete widgets in the UMG Palette, and keep abstract authoring bases out of COMMON;
+- manually verify one extension control at a time before starting the next owner test row.
 
 ## Acceptance Criteria
 
@@ -1642,7 +1765,7 @@ The Lunar UI Navigation System V1 is complete when:
 - explicit navigation, fallback, groups, priority, wrap, and Block rules are deterministic;
 - mouse and Navigation handoff preserves the intended selection;
 - keyboard and gamepad UI inputs do not trigger Pawn actions while consumed;
-- Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, and Tabs follow this specification;
+- Slider, OptionSlider, Switch, Radio, ScrollBox, ListView, ComboBox, ContextMenu, Tabs, Key Selector, Splitter, and Docking controls follow this specification;
 - prompts update when the input device changes;
 - missing icon and invalid graph configuration are clearly visible and reported to the Lunar Console;
 - native UMG navigation settings cannot accidentally override Lunar behavior through the normal Details workflow;

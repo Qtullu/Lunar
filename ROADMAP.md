@@ -102,11 +102,17 @@ Phase 7 C++ implementation, editor integration, diagnostics, and documentation a
 
 The next owner pass is tracked as a strict one-widget-at-a-time sequence in [UI Navigation Owner Handoff — Ordered Widget Test And Defaults Queue](docs/UI_NAVIGATION_OWNER_HANDOFF.md#7-ordered-widget-test-and-defaults-queue). Verify each row before assigning its default assets or moving to the next control.
 
-After every existing row in that queue is verified and the current navigation system is stable, complete one deferred control-extension pass before creating final examples and end-user documentation:
+The owner approved the next control-extension pass on 2026-07-22. Complete it in the following strict order before final examples and end-user documentation:
 
-- [ ] Design, implement, and manually verify a Lunar key-selector control for game-settings rebinding, including capture, cancel/clear, conflict, device presentation, accessibility, and stable navigation behavior.
+- [x] Close the `ULunarKeySelector`, `ULunarSplitter`, and dynamic Docking design in `docs/UI_NAVIGATION_SPEC.md`.
+- [ ] Add Enhanced Input as an explicit Lunar runtime/plugin dependency and implement `ULunarKeySelector` with modal keyboard/mouse/gamepad/chord capture, lossless application rules, UE 5.8 mapping profiles and seven player-mappable slots, cancel/clear, configurable conflicts, protected bindings, Immediate/Deferred changes, full registered-default reset, owner-authored presentation, Designer Preview, accessibility, and diagnostics.
+- [ ] Manually verify `ULunarKeySelector` one behavior at a time and record row 13 in the owner handoff.
+- [ ] Implement `ULunarSplitter` for arbitrary panel counts with generated owner-authored handles, live/on-release pointer and touch resizing, min/max sizing, persistence, optional keyboard/gamepad resize, Content Browser registration, and diagnostics.
+- [ ] Manually verify `ULunarSplitter` and record row 14 in the owner handoff.
+- [ ] Implement full dynamic editor-style `ULunarDockSpace`, abstract `ULunarDockablePanel`, and `ULunarDockLayoutAsset`: split/tab layout trees, floating panels inside the DockSpace, close confirmation and lifetimes, singleton/multi-instance restore, layout asset/JSON persistence, cross-DockSpace groups, Designer Preview, registration, and diagnostics. Do not modify or reuse `ULunarDraggableWindow` as the docking implementation.
+- [ ] Manually verify Docking and record row 15 in the owner handoff.
 - [ ] Design, implement, and manually verify Lunar float and integer spin-box controls with type-appropriate ranges, steps, limits, optional repeat and interpolation, owner-defined value formatting/presentation, and complete Blueprint getters, setters, and change delegates.
-- [ ] Only after those deferred controls pass the same owner verification gate, create the final Content examples, screenshots, tutorial, troubleshooting guide, and complete navigation documentation.
+- [ ] Only after those extension controls pass the same owner verification gate, create the final Content examples, screenshots, tutorial, troubleshooting guide, and complete navigation documentation.
 
 M1 is complete when the C++ system builds on UE 5.8 Win64 and, after owner Content integration, the example menu can be operated without a mouse, focus never becomes lost, input prompts update on device change, handled UI input cannot reach gameplay, and every supported control follows the shared contract.
 

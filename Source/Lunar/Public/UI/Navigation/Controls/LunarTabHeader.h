@@ -19,7 +19,7 @@ class ULunarTabs;
  * Selection and active-page state are independent so users may navigate the strip before activating a page.
  * @ingroup LunarNavigationControls
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class LUNAR_API ULunarTabHeader : public ULunarNavigableWidget
 {
 	GENERATED_BODY()
@@ -35,6 +35,10 @@ public:
 	/** Returns the Tabs control that generated this header. @return Owning Tabs, or null before initialization. */
 	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
 	ULunarTabs* GetTabsOwner() const { return TabsOwner; }
+
+	/** Returns whether this header currently owns the active page. @return True when its tab is active. */
+	UFUNCTION(BlueprintPure, Category = "Lunar|UI|Tabs")
+	bool IsActiveTab() const { return bActiveTabHeader; }
 
 	/** Stable tab ID assigned by the owning Tabs control. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Lunar|UI|Tabs")
